@@ -1,60 +1,102 @@
-import * as THREE from "three";
-import { gridSetup } from "/src/gridLogic.js";
+import { initThree, updateThreeGrid } from "/src/threeLogic.js";
 
-// Dot Variables
-const dotSize = 2;
-const dotSpace = 40;
+// UI Elements
+let imageLoader;
+let gridScale, sizeScale, spaceScale;
+let currentImage;
 
-// Window Setup
-let winWidth = window.innerWidth;
-let winHeight = window.innerHeight;
+// Decoupled Global States passed to Three.js
+let gridSize;
+let pixelSpace;
+let pixelSizePercent;
 
-// Scene Setup
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x222222);
+const maxScales = {
+  gridScale: { min: 10, max: 20 },
+  spaceScale: { min: 1, max: 20 },
+  sizeScale: { min: 0, max: 200 },
+};
 
-// Camera Setup (0,0 is dead center)
-const camera = new THREE.OrthographicCamera(
-  winWidth / -2,
-  winWidth / 2,
-  winHeight / 2,
-  winHeight / -2,
-  0.1,
-  1000,
-);
-camera.position.z = 10;
-
-// Renderer Logic
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(winWidth, winHeight);
-document.body.appendChild(renderer.domElement);
-
-// Circle Setup
-const geometry = new THREE.CircleGeometry(dotSize, 32);
-const material = new THREE.MeshBasicMaterial({ color: 0xf43b00 });
-
-// Grid and circle instancing
-gridSetup(scene, geometry, material, dotSpace);
-
-// Animation setup
-function animate() {
-  requestAnimationFrame(animate);
-  renderer.render(scene, camera);
+function mapPercentToRange(percent, config) {
+  return config.min + (percent / 100) * (config.max - config.min);
 }
-animate();
 
-// Window Resize event (Fixed for Orthographic Camera)
-window.addEventListener("resize", () => {
-  winWidth = window.innerWidth;
-  winHeight = window.innerHeight;
+function redraw() {
+  if (currentImage) {
+    const settings = { gridSize, pixelSpace, pixelSizePercent };
+    updateThreeGrid(currentImage, settings);
+  }
+}
 
-  camera.left = winWidth / -2;
-  camera.right = winWidth / 2;
-  camera.top = winHeight / 2;
-  camera.bottom = winHeight / -2;
+function handleSliderChange(event) {
+  const percent = parseInt(event.target.value);
+  const id = event.target.id;
 
-  camera.updateProjectionMatrix();
-  renderer.setSize(winWidth, winHeight);
+  switch (id) {
+    case "gridScale":
+      gridSize = Math.floor(mapPercentToRange(percent, maxScales.gridScale));
+      break;
+    case "spaceScale":
+      pixelSpace = Math.floor(mapPercentToRange(percent, maxScales.spaceScale));
+      break;
+    case "sizeScale":
+      pixelSizePercent = Math.floor(
+        mapPercentToRange(percent, maxScales.sizeScale),
+      );
+      break;
+  }
 
-  gridSetup(scene, geometry, material, dotSpace);
+  redraw();
+}
+
+function loadDefaultImage() {
+  const defaultImage = document.getElementById("defaultImage");
+  if (defaultImage) {
+    currentImage = defaultImage;
+    redraw();
+  }
+}
+
+function handleImage(imageInput) {
+  if (!imageInput.target.files || !imageInput.target.files[0]) return;
+
+  const reader = new FileReader();
+  reader.onload = function (event) {
+    const img = new Image();
+    img.onload = function () {
+      currentImage = img;
+      redraw();
+    };
+    img.src = event.target.result;
+  };
+  reader.readAsDataURL(imageInput.target.files[0]);
+}
+
+window.addEventListener("load", () => {
+  // 1. Initialize Three.js on your main HTML canvas element
+  initThree("canvas");
+
+  // 2. Bind inputs and state
+  imageLoader = document.getElementById("imageLoader");
+
+  gridScale = document.getElementById("gridScale");
+  gridScale.addEventListener("input", handleSliderChange);
+  gridSize = Math.floor(
+    mapPercentToRange(parseInt(gridScale.value), maxScales.gridScale),
+  );
+
+  spaceScale = document.getElementById("spaceScale");
+  spaceScale.addEventListener("input", handleSliderChange);
+  pixelSpace = Math.floor(
+    mapPercentToRange(parseInt(spaceScale.value), maxScales.spaceScale),
+  );
+
+  sizeScale = document.getElementById("sizeScale");
+  sizeScale.addEventListener("input", handleSliderChange);
+  pixelSizePercent = Math.floor(
+    mapPercentToRange(parseInt(sizeScale.value), maxScales.sizeScale),
+  );
+
+  // 3. Initial load
+  loadDefaultImage();
+  imageLoader.addEventListener("change", handleImage, false);
 });

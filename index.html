@@ -7,30 +7,97 @@
         <link rel="stylesheet" href="/src/style.css" />
     </head>
     <body>
-        <label
-            for="imageLoader"
-            class="flex absolute top-5 left-5 bg-white text-black w-60 h-20 justify-center items-center rounded-2xl cursor-pointer hover:bg-gray-800 hover:text-white transition-colors select-none"
-        >
-            <span class="text-2xl font-medium">Upload Image</span>
-            <input
-                type="file"
-                id="imageLoader"
-                accept="image/*"
-                class="hidden"
-            />
-        </label>
-
+        <!-- Canvas for the 3D Space -->
         <div class="flex h-screen justify-center items-center">
             <canvas id="canvas"></canvas>
         </div>
 
+        <!-- Labels and Slider Controls -->
+        <div
+            class="slider-container absolute bottom-10 flex w-screen justify-around"
+        >
+            <label
+                for="imageLoader"
+                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl cursor-pointer"
+            >
+                <span
+                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider select-none"
+                    >Upload Image</span
+                >
+                <input
+                    type="file"
+                    id="imageLoader"
+                    accept="image/*"
+                    class="hidden"
+                />
+            </label>
+            <div
+                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl"
+            >
+                <label
+                    for="gridScale"
+                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider h-6 select-none"
+                >
+                    <span>Pixel Amount</span>
+                </label>
+                <input
+                    type="range"
+                    id="gridScale"
+                    min="0"
+                    max="100"
+                    value="50"
+                    step="1"
+                    class="w-[10vw] h-1 rounded-lg appearance-none cursor-pointer accent-blue-500 bg-black"
+                />
+            </div>
+            <div
+                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl"
+            >
+                <label
+                    for="sizeScale"
+                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider h-6 select-none"
+                >
+                    <span>Pixel Scale</span>
+                </label>
+                <input
+                    type="range"
+                    id="sizeScale"
+                    min="0"
+                    max="100"
+                    value="80"
+                    step="1"
+                    class="w-[10vw] h-1 rounded-lg appearance-none cursor-pointer accent-blue-500 bg-black"
+                />
+            </div>
+            <div
+                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl"
+            >
+                <label
+                    for="spaceScale"
+                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider h-6 select-none"
+                >
+                    <span>Grid Scale</span>
+                </label>
+                <input
+                    type="range"
+                    id="spaceScale"
+                    min="0"
+                    max="100"
+                    value="50"
+                    step="1"
+                    class="w-[10vw] h-1 rounded-lg appearance-none cursor-pointer accent-blue-500 bg-black"
+                />
+            </div>
+        </div>
+
+        <!-- Default Image -->
         <img
             id="defaultImage"
             class="hidden"
-            src="src/assets/defaultImage.webp"
+            src="src/assets/defaultImageTransparent.png"
         />
 
-        <script src="src/imageLogic.js"></script>
-        <!--<script type="module" src="src/main.js"></script>-->
+        <!-- Javascript Code Call -->
+        <script type="module" src="src/main.js"></script>
     </body>
 </html>
