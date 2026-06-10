@@ -31,6 +31,15 @@
                     class="hidden"
                 />
             </label>
+            <label
+                id="resetCamera"
+                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl cursor-pointer"
+            >
+                <span
+                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider select-none"
+                    >Reset Camera</span
+                >
+            </label>
             <div
                 class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl"
             >
@@ -81,6 +90,25 @@
                 <input
                     type="range"
                     id="spaceScale"
+                    min="0"
+                    max="100"
+                    value="50"
+                    step="1"
+                    class="w-[10vw] h-1 rounded-lg appearance-none cursor-pointer accent-blue-500 bg-black"
+                />
+            </div>
+            <div
+                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl"
+            >
+                <label
+                    for="noiseScale"
+                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider h-6 select-none"
+                >
+                    <span>Chaos Level</span>
+                </label>
+                <input
+                    type="range"
+                    id="noiseScale"
                     min="0"
                     max="100"
                     value="50"
