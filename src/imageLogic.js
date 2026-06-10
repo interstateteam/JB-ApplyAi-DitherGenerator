@@ -8,11 +8,13 @@ const gridSize = 40;
 const pixelSize = 10;
 const pixelSpace = 15;
 
+let gridWidth, gridHeight;
+
 // Image Loading Functions
 function loadDefaultImage() {
   const defaultImage = document.getElementById("defaultImage");
   if (defaultImage) {
-    processAndRenderImage(defaultImage);
+    processImage(defaultImage);
   }
 }
 function handleImage(imageInput) {
@@ -22,7 +24,7 @@ function handleImage(imageInput) {
   reader.onload = function (event) {
     const img = new Image();
     img.onload = function () {
-      processAndRenderImage(img);
+      processImage(img);
     };
     img.src = event.target.result;
   };
@@ -32,8 +34,8 @@ function handleImage(imageInput) {
 function processImage(img) {
   if (!img) return;
 
-  const gridWidth = Math.floor(img.width / gridSize);
-  const gridHeight = Math.floor(img.height / gridSize);
+  gridWidth = Math.floor(img.width / gridSize);
+  gridHeight = Math.floor(img.height / gridSize);
 
   canvas.width = gridWidth;
   canvas.height = gridHeight;
@@ -83,7 +85,6 @@ function renderPixelImage(pixelBuffer32) {
 }
 
 window.addEventListener("load", () => {
-  console.log("ran");
   loadDefaultImage();
   imageLoader.addEventListener("change", handleImage, false);
 });
