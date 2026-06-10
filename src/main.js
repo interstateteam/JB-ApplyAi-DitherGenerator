@@ -1,4 +1,9 @@
-import { initThree, resetCameraView } from "/src/three_sceneLogic.js";
+import {
+  initThree,
+  resetCameraView,
+  pauseControl,
+  setPauseControl,
+} from "/src/three_sceneLogic.js";
 import { updateThreeGrid } from "/src/three_gridLogic.js";
 
 // Maps each Three.js setting to its HTML slider ID and real-world min/max range.
@@ -12,6 +17,16 @@ const scales = {
 
 let currentImage = null;
 let material = null;
+
+const pauseBtn = document.getElementById("pauseRotation");
+
+pauseBtn.addEventListener("click", () => {
+  // Read the current live binding value, flip it, and pass it back
+  const nextState = !pauseControl;
+
+  // Send the update to three_sceneLogic.js
+  setPauseControl(nextState);
+});
 
 // Reads all sliders and returns a settings object with real mapped values.
 // Each 0–100 slider value is linearly interpolated into its actual range.

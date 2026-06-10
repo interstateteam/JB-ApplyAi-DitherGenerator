@@ -132,7 +132,7 @@ export function updateThreeGrid(img, settings, material) {
         circleInstance.setColorAt(instanceIndex, colorHelper);
       } else {
         // No image: fallback orange so the grid is visible during setup
-        colorHelper.setHex(0xf43b00);
+        colorHelper.setHex(0x000000);
         circleInstance.setColorAt(instanceIndex, colorHelper);
       }
 
@@ -143,7 +143,7 @@ export function updateThreeGrid(img, settings, material) {
       );
       // Push bright pixels forward in Z, creating a depth relief effect
       // console.log(ranbrightness * 1000);
-      dummy.position.z = brightness * 750;
+      dummy.position.z = brightness * 1200;
 
       dummy.updateMatrix();
       circleInstance.setMatrixAt(instanceIndex, dummy.matrix);

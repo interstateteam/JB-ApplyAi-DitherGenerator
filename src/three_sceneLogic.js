@@ -4,6 +4,17 @@ import { createPostProcessor } from "/src/postprocessing.js";
 
 // Exported so gridLogic can add/remove meshes without needing a getter
 export let scene, camera, renderer;
+export let pauseControl = false;
+
+// The setter function that main.js will call
+export function setPauseControl(value) {
+  pauseControl = value;
+
+  // Directly toggle autoRotate if using OrbitControls
+  if (controls) {
+    controls.autoRotate = !value;
+  }
+}
 
 const defCamPos = { x: 0, y: 0, z: 1000 };
 const defCamZoom = 0.5;
@@ -16,7 +27,7 @@ export function initThree(canvasId) {
   if (!htmlCanvas) return;
 
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1d1d1d);
+  scene.background = new THREE.Color(0xf43b00);
 
   // Orthographic camera keeps dot sizes consistent regardless of depth
   camera = new THREE.OrthographicCamera(
@@ -39,16 +50,22 @@ export function initThree(canvasId) {
   controls.target.set(defCamTar.x, defCamTar.y, defCamTar.z);
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 5.0;
 
   // Single material shared across all dot instances; colour is set per-instance via InstancedMesh
   const material = new THREE.MeshBasicMaterial({});
-  material.color.setRGB(1.0, 1.0, 1.0);
+  material.color.setRGB(0.0, 0.0, 0.0);
 
   const composer = createPostProcessor(renderer, scene, camera);
 
   function animate() {
     requestAnimationFrame(animate);
-    controls.update(); // required each frame when damping is enabled
+
+    if (pauseControl) {
+      controls.update(); // required each frame when damping is enabled
+    }
+
     renderer.render(scene, camera);
     // composer.render(); // swap in to enable bloom post-processing
   }

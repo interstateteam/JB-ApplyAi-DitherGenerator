@@ -14,6 +14,20 @@
 
         <!-- Labels and Slider Controls -->
         <div
+            class="slider-container absolute bottom-30 flex w-screen justify-around"
+        >
+            <div
+                class="text-xs text-center py-2 px-8 font-medium rounded-2xl bg-white text-black uppercase tracking-wider select-none"
+            >
+                <h1>
+                    Click and drag to move around. Works best with a png that
+                    has a clear subject with good contrast and a transparent
+                    background. Not sure about mobile yet
+                </h1>
+            </div>
+        </div>
+
+        <div
             class="slider-container absolute bottom-10 flex w-screen justify-around"
         >
             <label
@@ -38,6 +52,15 @@
                 <span
                     class="text-xs flex justify-between font-medium text-black uppercase tracking-wider select-none"
                     >Reset Camera</span
+                >
+            </label>
+            <label
+                id="pauseRotation"
+                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl cursor-pointer"
+            >
+                <a
+                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider select-none"
+                    >Pause/Play Rotation</a
                 >
             </label>
             <div
