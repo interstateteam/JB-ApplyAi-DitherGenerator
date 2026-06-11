@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>DitherFile</title>
+      <script type="module" crossorigin src="/DitherShapes/assets/index-KxpmFPCQ.js"></script>
+      <link rel="stylesheet" crossorigin href="/DitherShapes/assets/index-BNqWEVy3.css">
+    </head>
+    <body class="bg-ApplyDark">
+        <!-- Canvas for the 3D Space -->
+        <div class="relative w-[80vw] h-screen overflow-clip">
+            <!-- ESSENTIAL: 3D Canvas -->
+            <div
+                class="absolute inset-[0.4vw] flex justify-center items-center bg-ApplyOrange rounded-2xl"
+            >
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <!-- OPTIONAL: Page Decoration -->
+            <img
+                class="absolute -top-20 -left-20 w-32 z-20 rotate-225 -scale-y-100"
+                src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
+            />
+            <img
+                class="absolute -bottom-20 -left-20 w-32 z-20 rotate-135"
+                src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
+            />
+            <img
+                class="absolute -right-20 -top-20 w-32 z-20 rotate-315"
+                src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
+            />
+            <img
+                class="absolute -right-20 -bottom-20 w-32 z-20 rotate-45 -scale-y-100"
+                src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
+            />
+        </div>
+
+        <!-- Labels and Slider Controls -->
+        <div
+            class="slider-container absolute right-[0.4vw] top-[1vh] w-[19.6vw] ml-[0.4vw] flex flex-col h-[98vh] bg-ApplyWhite rounded-2xl p-8 text-xs gap-10 font-AlbraLight"
+        >
+            <img src="/DitherShapes/assets/LogoApplyAI-C3Jl3SRp.svg" class="px-8 pt-8 pb-2" />
+            <h1 class="text-base leading-6">
+                Click and drag in the orange space to pan around the object.
+                Upload a png that has a clear subject with good contrast and a
+                transparent background. This site is not built for mobile
+            </h1>
+
+            <div
+                id="modeSelect"
+                class="group w-full h-20 flex flex-row text-center leading-10 place-items-center cursor-pointer place-content-center rounded-2xl outline-1 outline-ApplyDark"
+            >
+                <i
+                    data-lucide="chevron-down"
+                    class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-6 h-6 mr-4"
+                ></i>
+                <span class="text-base font-AlbraSans">Select Mode</span>
+            </div>
+            <div
+                class="flex flex-row justify-center items-center text-applyDark cursor-pointer"
+            >
+                <label
+                    for="pickImage"
+                    class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
+                >
+                    <i
+                        data-lucide="image-up"
+                        class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+
+                    <input
+                        type="file"
+                        id="pickImage"
+                        accept="image/*"
+                        class="hidden"
+                    />
+                </label>
+                <div
+                    id="focusCamera"
+                    class="group w-20 h-20 place-items-center place-content-center"
+                >
+                    <i
+                        data-lucide="focus"
+                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+                </div>
+
+                <div
+                    id="rotationAnimation"
+                    class="group w-20 h-20 place-items-center place-content-center"
+                >
+                    <i
+                        data-lucide="shell"
+                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+                </div>
+            </div>
+            <div class="flex flex-col gap-4">
+                <label
+                    for="pixelAmount"
+                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                >
+                    <span class="font-AlbraLight text-xl">Pixel Amount</span>
+                    <span class="font-AlbraMedium"
+                        >The amount of Pixels in the object</span
+                    >
+                </label>
+                <input
+                    type="range"
+                    id="pixelAmount"
+                    min="0"
+                    max="100"
+                    value="50"
+                    step="1"
+                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                />
+            </div>
+            <div class="flex flex-col gap-4">
+                <label
+                    for="pixelScale"
+                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                >
+                    <span class="font-AlbraLight text-xl">Pixel Scale</span>
+                    <span class="font-AlbraMedium"
+                        >The size for the individual pixels</span
+                    >
+                </label>
+                <input
+                    type="range"
+                    id="pixelScale"
+                    min="0"
+                    max="100"
+                    value="50"
+                    step="1"
+                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                />
+            </div>
+            <div class="flex flex-col gap-4">
+                <label
+                    for="gridScale"
+                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                >
+                    <span class="font-AlbraLight text-xl"> Grid Scale</span>
+                    <span class="font-AlbraMedium"
+                        >The empty space between the pixels</span
+                    >
+                </label>
+                <input
+                    type="range"
+                    id="gridScale"
+                    min="0"
+                    max="100"
+                    value="50"
+                    step="1"
+                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                />
+            </div>
+            <div class="flex flex-col gap-4">
+                <label
+                    for="pixelDistortion"
+                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                >
+                    <span class="font-AlbraLight text-xl">Pixel Chaos</span>
+                    <span class="font-AlbraMedium"
+                        >Perfect circle to irregular pen dot</span
+                    >
+                </label>
+                <input
+                    type="range"
+                    id="pixelDistortion"
+                    min="0"
+                    max="100"
+                    value="50"
+                    step="1"
+                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                />
+            </div>
+            <div class="flex flex-col gap-4">
+                <label
+                    for="gravityScale"
+                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                >
+                    <span class="font-AlbraLight text-xl"
+                        >Gravitational Pull</span
+                    >
+                    <span class="font-AlbraMedium"
+                        >How much the edges attract the particles</span
+                    >
+                </label>
+                <input
+                    type="range"
+                    id="gravityScale"
+                    min="0"
+                    max="100"
+                    value="50"
+                    step="1"
+                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                />
+            </div>
+            <div
+                class="flex flex-row justify-center items-center text-applyDark cursor-pointer"
+            >
+                <div
+                    id="exportPhoto"
+                    class="group w-20 h-20 place-items-center place-content-center"
+                >
+                    <i
+                        data-lucide="camera-off"
+                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+                </div>
+
+                <div
+                    id="exportVideo"
+                    class="group w-20 h-20 place-items-center place-content-center"
+                >
+                    <i
+                        data-lucide="video-off"
+                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Default Image -->
+        <img
+            id="defaultImage"
+            class="hidden"
+            src="/DitherShapes/assets/defaultImageTransparent-BIRUzgnf.png"
+        />
+
+        <!-- Javascript Code Call -->
+    </body>
+</html>
