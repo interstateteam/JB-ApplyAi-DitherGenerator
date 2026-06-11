@@ -3,8 +3,8 @@ import {
   resetCameraView,
   pauseControl,
   setPauseControl,
-} from "/src/three_sceneLogic.js";
-import { updateThreeGrid } from "/src/three_gridLogic.js";
+} from "./three_sceneLogic.js";
+import { updateThreeGrid } from "./three_gridLogic.js";
 import {
   createIcons,
   ImageUp,

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { createPostProcessor } from "/src/postprocessing.js";
+import { createPostProcessor } from "./postprocessing.js";
 
 // Exported so gridLogic can add/remove meshes without needing a getter
 export let scene, camera, renderer, controls;

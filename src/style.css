@@ -6,17 +6,17 @@
 
 @font-face {
     font-family: AlbraFont-light;
-    src: url(/src/fonts/AlbraBookTRIAL-Light.woff2);
+    src: url(./fonts/AlbraBookTRIAL-Light.woff2);
 }
 
 @font-face {
     font-family: AlbraFont-bold;
-    src: url(/src/fonts/AlbraTRIAL-Bold.woff2);
+    src: url(./fonts/AlbraTRIAL-Bold.woff2);
 }
 
 @font-face {
     font-family: AlbraFont-medium;
-    src: url(/src/fonts/AlbraGroteskTRIAL-Medium.woff2);
+    src: url(./fonts/AlbraGroteskTRIAL-Medium.woff2);
 }
 
 @theme {
