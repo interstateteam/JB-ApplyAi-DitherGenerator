@@ -3,21 +3,20 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createPostProcessor } from "/src/postprocessing.js";
 
 // Exported so gridLogic can add/remove meshes without needing a getter
-export let scene, camera, renderer;
+export let scene, camera, renderer, controls;
 export let pauseControl = false;
 
 // The setter function that main.js will call
 export function setPauseControl(value) {
   pauseControl = value;
 
-  // Directly toggle autoRotate if using OrbitControls
   if (controls) {
     controls.autoRotate = !value;
   }
 }
 
 const defCamPos = { x: 0, y: 0, z: 1000 };
-const defCamZoom = 0.5;
+const defCamZoom = 1;
 const defCamTar = { x: 0, y: 0, z: 500 };
 
 // Bootstraps the Three.js scene, camera, renderer, controls, and animation loop.
@@ -27,7 +26,7 @@ export function initThree(canvasId) {
   if (!htmlCanvas) return;
 
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf43b00);
+  scene.background = null;
 
   // Orthographic camera keeps dot sizes consistent regardless of depth
   camera = new THREE.OrthographicCamera(
@@ -36,22 +35,28 @@ export function initThree(canvasId) {
     window.innerHeight / 2,
     window.innerHeight / -2,
     1,
-    5000,
+    1000,
   );
   camera.position.set(defCamPos.x, defCamPos.y, defCamPos.z);
   camera.zoom = defCamZoom;
   camera.updateProjectionMatrix();
 
-  renderer = new THREE.WebGLRenderer({ canvas: htmlCanvas, antialias: true });
+  renderer = new THREE.WebGLRenderer({
+    canvas: htmlCanvas,
+    antialias: true,
+    alpha: true,
+  });
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x000000, 0);
 
   // OrbitControls: pan/zoom/rotate with damping for smooth feel
-  const controls = new OrbitControls(camera, renderer.domElement);
+  controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(defCamTar.x, defCamTar.y, defCamTar.z);
   controls.enableDamping = true;
-  controls.dampingFactor = 0.05;
+  controls.dampingFactor = 0.5;
   controls.autoRotate = true;
   controls.autoRotateSpeed = 5.0;
+  controls.saveState();
 
   // Single material shared across all dot instances; colour is set per-instance via InstancedMesh
   const material = new THREE.MeshBasicMaterial({});
@@ -61,13 +66,11 @@ export function initThree(canvasId) {
 
   function animate() {
     requestAnimationFrame(animate);
-
-    if (pauseControl) {
-      controls.update(); // required each frame when damping is enabled
+    if (controls) {
+      controls.update();
     }
-
     renderer.render(scene, camera);
-    // composer.render(); // swap in to enable bloom post-processing
+    // composer.render();
   }
   animate();
 
@@ -86,11 +89,9 @@ export function initThree(canvasId) {
   return { material };
 }
 
-// Snaps the camera back to its default position and zoom without affecting the target.
 export function resetCameraView() {
-  if (!camera) return;
-  camera.position.set(defCamPos.x, defCamPos.y, defCamPos.z);
-  camera.zoom = defCamZoom;
-  // Orthographic cameras require this after any zoom change
-  camera.updateProjectionMatrix();
+  if (!camera || !controls) return;
+  setPauseControl(true);
+
+  controls.reset();
 }

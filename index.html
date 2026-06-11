@@ -6,71 +6,144 @@
         <title>DitherFile</title>
         <link rel="stylesheet" href="/src/style.css" />
     </head>
-    <body>
+    <body class="bg-ApplyDark">
         <!-- Canvas for the 3D Space -->
-        <div class="flex h-screen justify-center items-center">
-            <canvas id="canvas"></canvas>
+        <div class="relative w-[80vw] h-screen overflow-clip">
+            <!-- ESSENTIAL: 3D Canvas -->
+            <div
+                class="absolute inset-[0.4vw] flex justify-center items-center bg-ApplyOrange rounded-2xl"
+            >
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <!-- OPTIONAL: Page Decoration -->
+            <img
+                class="absolute -top-20 -left-20 w-32 z-20 rotate-225 -scale-y-100"
+                src="src/assets/LogoMarkShape1.svg"
+            />
+            <img
+                class="absolute -bottom-20 -left-20 w-32 z-20 rotate-135"
+                src="src/assets/LogoMarkShape1.svg"
+            />
+            <img
+                class="absolute -right-20 -top-20 w-32 z-20 rotate-315"
+                src="src/assets/LogoMarkShape1.svg"
+            />
+            <img
+                class="absolute -right-20 -bottom-20 w-32 z-20 rotate-45 -scale-y-100"
+                src="src/assets/LogoMarkShape1.svg"
+            />
         </div>
 
         <!-- Labels and Slider Controls -->
         <div
-            class="slider-container absolute bottom-30 flex w-screen justify-around"
+            class="slider-container absolute right-[0.4vw] top-[1vh] w-[19.6vw] ml-[0.4vw] flex flex-col h-[98vh] bg-ApplyWhite rounded-2xl p-8 text-xs gap-10 font-AlbraLight"
         >
-            <div
-                class="text-xs text-center py-2 px-8 font-medium rounded-2xl bg-white text-black uppercase tracking-wider select-none"
-            >
-                <h1>
-                    Click and drag to move around. Works best with a png that
-                    has a clear subject with good contrast and a transparent
-                    background. Not sure about mobile yet
-                </h1>
-            </div>
-        </div>
+            <img src="src/assets/LogoApplyAI.svg" class="px-8 pt-8 pb-2" />
+            <h1 class="text-base leading-6">
+                Click and drag in the orange space to pan around the object.
+                Upload a png that has a clear subject with good contrast and a
+                transparent background. This site is not built for mobile
+            </h1>
 
-        <div
-            class="slider-container absolute bottom-10 flex w-screen justify-around"
-        >
-            <label
-                for="imageLoader"
-                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl cursor-pointer"
-            >
-                <span
-                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider select-none"
-                    >Upload Image</span
-                >
-                <input
-                    type="file"
-                    id="imageLoader"
-                    accept="image/*"
-                    class="hidden"
-                />
-            </label>
-            <label
-                id="resetCamera"
-                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl cursor-pointer"
-            >
-                <span
-                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider select-none"
-                    >Reset Camera</span
-                >
-            </label>
-            <label
-                id="pauseRotation"
-                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl cursor-pointer"
-            >
-                <a
-                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider select-none"
-                    >Pause/Play Rotation</a
-                >
-            </label>
             <div
-                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl"
+                id="modeSelect"
+                class="group w-full h-20 flex flex-row text-center leading-10 place-items-center cursor-pointer place-content-center rounded-2xl outline-1 outline-ApplyDark"
+            >
+                <i
+                    data-lucide="chevron-down"
+                    class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-6 h-6 mr-4"
+                ></i>
+                <span class="text-base font-AlbraSans">Select Mode</span>
+            </div>
+            <div
+                class="flex flex-row justify-center items-center text-applyDark cursor-pointer"
             >
                 <label
-                    for="gridScale"
-                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider h-6 select-none"
+                    for="pickImage"
+                    class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
                 >
-                    <span>Pixel Amount</span>
+                    <i
+                        data-lucide="image-up"
+                        class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+
+                    <input
+                        type="file"
+                        id="pickImage"
+                        accept="image/*"
+                        class="hidden"
+                    />
+                </label>
+                <div
+                    id="focusCamera"
+                    class="group w-20 h-20 place-items-center place-content-center"
+                >
+                    <i
+                        data-lucide="focus"
+                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+                </div>
+
+                <div
+                    id="rotationAnimation"
+                    class="group w-20 h-20 place-items-center place-content-center"
+                >
+                    <i
+                        data-lucide="shell"
+                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+                </div>
+            </div>
+            <div class="flex flex-col gap-4">
+                <label
+                    for="pixelAmount"
+                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                >
+                    <span class="font-AlbraLight text-xl">Pixel Amount</span>
+                    <span class="font-AlbraMedium"
+                        >The amount of Pixels in the object</span
+                    >
+                </label>
+                <input
+                    type="range"
+                    id="pixelAmount"
+                    min="0"
+                    max="100"
+                    value="50"
+                    step="1"
+                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                />
+            </div>
+            <div class="flex flex-col gap-4">
+                <label
+                    for="pixelScale"
+                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                >
+                    <span class="font-AlbraLight text-xl">Pixel Scale</span>
+                    <span class="font-AlbraMedium"
+                        >The size for the individual pixels</span
+                    >
+                </label>
+                <input
+                    type="range"
+                    id="pixelScale"
+                    min="0"
+                    max="100"
+                    value="50"
+                    step="1"
+                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                />
+            </div>
+            <div class="flex flex-col gap-4">
+                <label
+                    for="gridScale"
+                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                >
+                    <span class="font-AlbraLight text-xl"> Grid Scale</span>
+                    <span class="font-AlbraMedium"
+                        >The empty space between the pixels</span
+                    >
                 </label>
                 <input
                     type="range"
@@ -79,65 +152,73 @@
                     max="100"
                     value="50"
                     step="1"
-                    class="w-[10vw] h-1 rounded-lg appearance-none cursor-pointer accent-blue-500 bg-black"
+                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />
             </div>
-            <div
-                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl"
-            >
+            <div class="flex flex-col gap-4">
                 <label
-                    for="sizeScale"
-                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider h-6 select-none"
+                    for="pixelDistortion"
+                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
                 >
-                    <span>Pixel Scale</span>
+                    <span class="font-AlbraLight text-xl">Pixel Chaos</span>
+                    <span class="font-AlbraMedium"
+                        >Perfect circle to irregular pen dot</span
+                    >
                 </label>
                 <input
                     type="range"
-                    id="sizeScale"
-                    min="0"
-                    max="100"
-                    value="80"
-                    step="1"
-                    class="w-[10vw] h-1 rounded-lg appearance-none cursor-pointer accent-blue-500 bg-black"
-                />
-            </div>
-            <div
-                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl"
-            >
-                <label
-                    for="spaceScale"
-                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider h-6 select-none"
-                >
-                    <span>Grid Scale</span>
-                </label>
-                <input
-                    type="range"
-                    id="spaceScale"
+                    id="pixelDistortion"
                     min="0"
                     max="100"
                     value="50"
                     step="1"
-                    class="w-[10vw] h-1 rounded-lg appearance-none cursor-pointer accent-blue-500 bg-black"
+                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />
             </div>
-            <div
-                class="w-[12vw] h-[4vh] bg-white flex flex-col justify-center items-center rounded-xl"
-            >
+            <div class="flex flex-col gap-4">
                 <label
-                    for="noiseScale"
-                    class="text-xs flex justify-between font-medium text-black uppercase tracking-wider h-6 select-none"
+                    for="gravityScale"
+                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
                 >
-                    <span>Chaos Level</span>
+                    <span class="font-AlbraLight text-xl"
+                        >Gravitational Pull</span
+                    >
+                    <span class="font-AlbraMedium"
+                        >How much the edges attract the particles</span
+                    >
                 </label>
                 <input
                     type="range"
-                    id="noiseScale"
+                    id="gravityScale"
                     min="0"
                     max="100"
                     value="50"
                     step="1"
-                    class="w-[10vw] h-1 rounded-lg appearance-none cursor-pointer accent-blue-500 bg-black"
+                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />
+            </div>
+            <div
+                class="flex flex-row justify-center items-center text-applyDark cursor-pointer"
+            >
+                <div
+                    id="exportPhoto"
+                    class="group w-20 h-20 place-items-center place-content-center"
+                >
+                    <i
+                        data-lucide="camera-off"
+                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+                </div>
+
+                <div
+                    id="exportVideo"
+                    class="group w-20 h-20 place-items-center place-content-center"
+                >
+                    <i
+                        data-lucide="video-off"
+                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+                </div>
             </div>
         </div>
 

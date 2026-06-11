@@ -9,6 +9,7 @@ export function sampleImage(img, cols, rows) {
   sampleCanvas.width = cols;
   sampleCanvas.height = rows;
   sampleCtx.drawImage(img, 0, 0, cols, rows);
+
   return sampleCtx.getImageData(0, 0, cols, rows);
 }
 
@@ -21,7 +22,8 @@ export function getBrightnessRange(imgData) {
 
   for (let p = 0; p < imgData.data.length; p += 4) {
     const a = imgData.data[p + 3] / 255;
-    if (a > 0) { // skip fully transparent pixels
+    if (a > 0) {
+      // skip fully transparent pixels
       const br =
         0.299 * (imgData.data[p] / 255) +
         0.587 * (imgData.data[p + 1] / 255) +

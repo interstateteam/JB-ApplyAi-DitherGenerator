@@ -5,31 +5,35 @@ import {
   setPauseControl,
 } from "/src/three_sceneLogic.js";
 import { updateThreeGrid } from "/src/three_gridLogic.js";
+import {
+  createIcons,
+  ImageUp,
+  Shell,
+  Focus,
+  CameraOff,
+  VideoOff,
+  ChevronDown,
+} from "lucide";
 
-// Maps each Three.js setting to its HTML slider ID and real-world min/max range.
-// Slider values are always 0–100; getSettings() converts them to these units at runtime.
 const scales = {
-  gridSize: { id: "gridScale", min: 20, max: 5 }, // dot spacing in px (inverts: high % = tighter grid)
-  pixelSpace: { id: "spaceScale", min: 1, max: 20 }, // global instance scale multiplier
-  pixelSizePercent: { id: "sizeScale", min: 0, max: 100 }, // base dot size before brightness shading
-  varietyPercent: { id: "noiseScale", min: 0, max: 30 }, // chaos: wobble in size, stretch, and geometry
+  pixelAmount: { id: "pixelAmount", min: 80, max: 10 },
+  pixelScale: { id: "pixelScale", min: 0, max: 200 },
+  gridScale: { id: "gridScale", min: 2, max: 10 },
+  pixelDistortion: { id: "pixelDistortion", min: 0, max: 30 },
+  gravityScale: { id: "gravityScale", min: 0, max: 30 },
 };
 
-let currentImage = null;
+let defaultImage;
 let material = null;
 
-const pauseBtn = document.getElementById("pauseRotation");
+const pauseBtn = document.getElementById("rotationAnimation");
 
 pauseBtn.addEventListener("click", () => {
-  // Read the current live binding value, flip it, and pass it back
   const nextState = !pauseControl;
 
-  // Send the update to three_sceneLogic.js
   setPauseControl(nextState);
 });
 
-// Reads all sliders and returns a settings object with real mapped values.
-// Each 0–100 slider value is linearly interpolated into its actual range.
 const getSettings = () =>
   Object.fromEntries(
     Object.entries(scales).map(([key, { id, min, max }]) => {
@@ -38,45 +42,46 @@ const getSettings = () =>
     }),
   );
 
-// Rebuilds the grid using the current image and live slider values.
-// Bails early if either isn't ready yet.
-const redraw = () =>
-  currentImage &&
-  material &&
-  updateThreeGrid(currentImage, getSettings(), material);
-
-// Loads an image from a URL (file blob or path), then triggers a redraw once decoded.
 const loadImage = (src) => {
   const img = new Image();
   img.onload = () => {
-    currentImage = img;
+    defaultImage = img;
     redraw();
   };
   img.src = src;
 };
 
+const redraw = () => updateThreeGrid(defaultImage, getSettings(), material);
+
 window.addEventListener("load", () => {
-  // Boot Three.js and get back the shared material for instanced mesh coloring
   ({ material } = initThree("canvas"));
 
-  // Wire every slider to redraw on change
   Object.values(scales).forEach(({ id }) =>
     document.getElementById(id).addEventListener("input", redraw),
   );
 
-  // File picker: convert the dropped file to an object URL and load it
-  document.getElementById("imageLoader").addEventListener("change", (e) => {
+  document.getElementById("pickImage").addEventListener("change", (e) => {
     if (e.target.files[0]) loadImage(URL.createObjectURL(e.target.files[0]));
   });
 
   document
-    .getElementById("resetCamera")
+    .getElementById("focusCamera")
     .addEventListener("click", resetCameraView);
 
-  // If the page embeds a default <img id="defaultImage">, use it as the starting image
   const defaultImage = document.getElementById("defaultImage");
   if (defaultImage) {
-    currentImage = defaultImage;
+    loadImage(defaultImage.src);
     redraw();
   }
+
+  createIcons({
+    icons: {
+      ImageUp,
+      Shell,
+      Focus,
+      CameraOff,
+      VideoOff,
+      ChevronDown,
+    },
+  });
 });

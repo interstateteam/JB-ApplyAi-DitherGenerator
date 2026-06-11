@@ -1,6 +1,6 @@
 {
   "name": "dithershapes",
-  "version": "0.0.0",
+  "version": "0.0.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",
+    "lucide": "^1.17.0",
     "three": "^0.184.0"
   }
 }
