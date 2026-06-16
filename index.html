@@ -37,28 +37,16 @@
 
         <!-- Labels and Slider Controls -->
         <div
-            class="slider-container absolute right-[0.4vw] top-[1vh] w-[19.6vw] ml-[0.4vw] flex flex-col h-[98vh] bg-ApplyWhite rounded-2xl p-8 text-xs gap-10 font-AlbraLight"
+            class="slider-container absolute right-[0.4vw] top-[1vh] w-[19.6vw] ml-[0.4vw] flex flex-col h-[98vh] bg-ApplyWhite rounded-2xl p-8 text-xs gap-8 font-AlbraLight"
         >
-            <img src="src/assets/LogoApplyAI.svg" class="px-8 pt-8 pb-2" />
-            <h1 class="text-base leading-6">
+            <img src="src/assets/LogoApplyAI.svg" class="px-8 pt-8" />
+            <h1 class="text-base leading-6 text-center">
                 Click and drag in the orange space to pan around the object.
                 Upload a png that has a clear subject with good contrast and a
-                transparent background. This site is not built for mobile
+                transparent background.
             </h1>
 
-            <div
-                id="modeSelect"
-                class="group w-full h-20 flex flex-row text-center leading-10 place-items-center cursor-pointer place-content-center rounded-2xl outline-1 outline-ApplyDark"
-            >
-                <i
-                    data-lucide="chevron-down"
-                    class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-6 h-6 mr-4"
-                ></i>
-                <span class="text-base font-AlbraSans">Select Mode</span>
-            </div>
-            <div
-                class="flex flex-row justify-center items-center text-applyDark cursor-pointer"
-            >
+            <div class="flex-row flex gap-4">
                 <label
                     for="pickImage"
                     class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
@@ -75,6 +63,23 @@
                         class="hidden"
                     />
                 </label>
+                <div
+                    id="modeSelect"
+                    class="group w-full flex flex-row text-center leading-10 place-items-center cursor-pointer place-content-center rounded-2xl outline-1 outline-ApplyDark"
+                >
+                    <i
+                        data-lucide="chevron-down"
+                        class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-6 mr-4"
+                    ></i>
+                    <span class="text-base font-AlbraSans">
+                        [Dev] Select Mode</span
+                    >
+                </div>
+            </div>
+
+            <div
+                class="flex flex-row justify-center items-center text-applyDark cursor-pointer"
+            >
                 <div
                     id="focusCamera"
                     class="group w-20 h-20 place-items-center place-content-center"
@@ -142,7 +147,7 @@
                 >
                     <span class="font-AlbraLight text-xl"> Grid Scale</span>
                     <span class="font-AlbraMedium"
-                        >The empty space between the pixels</span
+                        >Increase the spacing on the Z-axis</span
                     >
                 </label>
                 <input
@@ -175,16 +180,37 @@
                     class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />
             </div>
+
+            <div class="flex flex-col gap-4">
+                <label
+                    for="clipDepth"
+                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                >
+                    <span class="font-AlbraLight text-xl">Depth Slice</span>
+                    <span class="font-AlbraMedium"
+                        >Amount of dots that disappear</span
+                    >
+                </label>
+                <input
+                    type="range"
+                    id="clipDepth"
+                    min="0"
+                    max="100"
+                    value="100"
+                    step="1"
+                    class="appearance-none cursor-pointer accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                />
+            </div>
             <div class="flex flex-col gap-4">
                 <label
                     for="gravityScale"
                     class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
                 >
                     <span class="font-AlbraLight text-xl"
-                        >Gravitational Pull</span
+                        >[Dev] Gravitational Pull</span
                     >
-                    <span class="font-AlbraMedium"
-                        >How much the edges attract the particles</span
+                    <span class="font-AlbraMedium">
+                        How much the edges attract the particles</span
                     >
                 </label>
                 <input

@@ -3,8 +3,9 @@ import {
   resetCameraView,
   pauseControl,
   setPauseControl,
-} from "./three_sceneLogic.js";
-import { updateThreeGrid } from "./three_gridLogic.js";
+  setCameraClipping,
+} from "./scripts/three_sceneLogic.js";
+import { updateThreeGrid } from "./scripts/three_gridLogic.js";
 import {
   createIcons,
   ImageUp,
@@ -15,73 +16,84 @@ import {
   ChevronDown,
 } from "lucide";
 
-const scales = {
-  pixelAmount: { id: "pixelAmount", min: 80, max: 10 },
-  pixelScale: { id: "pixelScale", min: 0, max: 200 },
-  gridScale: { id: "gridScale", min: 2, max: 10 },
-  pixelDistortion: { id: "pixelDistortion", min: 0, max: 30 },
-  gravityScale: { id: "gravityScale", min: 0, max: 30 },
+// --- State & Constants ---
+const scaleSliders = {
+  pixelAmount: { min: 80, max: 10, action: "redraw" },
+  pixelScale: { min: 0, max: 200, action: "redraw" },
+  gridScale: { min: 2, max: 12, action: "redraw" },
+  pixelDistortion: { min: 0, max: 30, action: "redraw" },
+  gravityScale: { min: 0, max: 30, action: "redraw" },
+  clipDepth: { min: 1000, max: 3000, action: "camera" },
 };
 
-let defaultImage;
-let material = null;
+let currentImage = null;
 
-const pauseBtn = document.getElementById("rotationAnimation");
+// --- Functions ---
+const getSettings = () => {
+  const currentSettings = {};
 
-pauseBtn.addEventListener("click", () => {
-  const nextState = !pauseControl;
+  for (const settingName in scaleSliders) {
+    const range = scaleSliders[settingName];
+    const slider = document.getElementById(settingName);
+    const percentage = parseInt(slider?.value) || 0;
 
-  setPauseControl(nextState);
-});
+    const calculatedValue =
+      range.min + (percentage / 100) * (range.max - range.min);
 
-const getSettings = () =>
-  Object.fromEntries(
-    Object.entries(scales).map(([key, { id, min, max }]) => {
-      const pct = parseInt(document.getElementById(id).value) || 0;
-      return [key, Math.floor(min + (pct / 100) * (max - min))];
-    }),
-  );
+    currentSettings[settingName] = Math.floor(calculatedValue);
+  }
 
-const loadImage = (src) => {
-  const img = new Image();
-  img.onload = () => {
-    defaultImage = img;
+  return currentSettings;
+};
+
+const redraw = () => {
+  if (currentImage) {
+    updateThreeGrid(currentImage, getSettings());
+  }
+};
+
+const loadImage = (imageSource) => {
+  const temporaryImage = new Image();
+
+  temporaryImage.onload = () => {
+    currentImage = temporaryImage;
     redraw();
   };
-  img.src = src;
+
+  temporaryImage.src = imageSource;
 };
 
-const redraw = () => updateThreeGrid(defaultImage, getSettings(), material);
+// --- Immediate Event Listeners ---
+document
+  .getElementById("rotationAnimation")
+  .addEventListener("click", () => setPauseControl(!pauseControl));
+document
+  .getElementById("focusCamera")
+  .addEventListener("click", resetCameraView);
+document.getElementById("pickImage").addEventListener("change", (e) => {
+  if (e.target.files[0]) loadImage(URL.createObjectURL(e.target.files[0]));
+});
 
+// --- Initialization (On Load) ---
 window.addEventListener("load", () => {
-  ({ material } = initThree("canvas"));
+  initThree("canvas");
 
-  Object.values(scales).forEach(({ id }) =>
-    document.getElementById(id).addEventListener("input", redraw),
-  );
-
-  document.getElementById("pickImage").addEventListener("change", (e) => {
-    if (e.target.files[0]) loadImage(URL.createObjectURL(e.target.files[0]));
+  Object.keys(scaleSliders).forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      if (scaleSliders[id].action === "camera") {
+        setCameraClipping(getSettings().clipDepth);
+      } else {
+        redraw();
+      }
+    });
   });
 
-  document
-    .getElementById("focusCamera")
-    .addEventListener("click", resetCameraView);
-
-  const defaultImage = document.getElementById("defaultImage");
-  if (defaultImage) {
-    loadImage(defaultImage.src);
-    redraw();
+  const defaultImageEl = document.getElementById("defaultImage");
+  if (defaultImageEl?.src) {
+    loadImage(defaultImageEl.src);
   }
 
   createIcons({
-    icons: {
-      ImageUp,
-      Shell,
-      Focus,
-      CameraOff,
-      VideoOff,
-      ChevronDown,
-    },
+    icons: { ImageUp, Shell, Focus, CameraOff, VideoOff, ChevronDown },
   });
 });
