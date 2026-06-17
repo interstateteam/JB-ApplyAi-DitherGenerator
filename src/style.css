@@ -38,12 +38,82 @@ body {
     height: 100vh;
 }
 
-.icon-animate {
-    transition:
-        transform 0.2s ease-in-out,
-        color 0.2s ease;
+.swal2-container.swal2-backdrop-show {
+    background: var(--color-ApplyMaroon / 80);
+    backdrop-filter: blur(2px);
 }
-.icon-animate:hover {
-    transform: scale(1.2) rotate(10deg);
-    color: #f43b00;
+
+.swal2-input {
+    background-color: var(--color-ApplyDark);
+    border: 2px solid var(--color-ApplyOrange);
+    border-radius: 5rem;
+    box-shadow: none;
+    text-align: center;
+    font-size: 1.2rem;
+    height: 3.5rem;
+    justify-self: center;
+    width: 10rem;
+    color: var(--color-ApplyWhite);
+    font-family: var(--font-AlbraSans);
+}
+
+.swal2-loader {
+    border-color: var(--color-ApplyOrange) transparent var(--color-ApplyOrange)
+        transparent;
+}
+
+.swal2-input::-webkit-outer-spin-button,
+.swal2-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* Remove spin buttons for Firefox */
+.swal2-input {
+    -moz-appearance: textfield;
+}
+
+.cusSwal-popup {
+    border-radius: 2rem;
+    padding: 2rem;
+    background-color: var(--color-ApplyDark);
+}
+
+.cusSwal-title {
+    color: var(--color-ApplyWhite);
+
+    user-select: none;
+    font-family: var(--font-AlbraBold);
+    padding: 2rem 0rem 0rem 0rem;
+}
+
+.cusSwal-text {
+    color: var(--color-ApplyWhite);
+    user-select: none;
+    font-family: var(--font-AlbraLight);
+    margin: 0px;
+    padding: 0.4rem 0rem 0rem 0rem;
+    white-space: pre-line;
+}
+
+.cusSwal-button {
+    border-radius: 1rem;
+    background-color: var(--color-ApplyOrange);
+
+    color: var(--color-ApplyWhite);
+    padding: 0.5rem 2.5rem;
+    margin: 0.5rem 0.4rem 1rem 0.4rem;
+    cursor: pointer;
+    user-select: none;
+    font-family: var(--font-AlbraSans);
+
+    transition: all 200ms ease-out;
+}
+
+.cusSwal-button:hover {
+    border-radius: 3rem;
+    background-color: var(--color-ApplyWhite);
+    color: var(--color-ApplyOrange);
+    border: 2px solid var(--color-ApplyOrange);
+    transition: all 200ms ease-out;
 }

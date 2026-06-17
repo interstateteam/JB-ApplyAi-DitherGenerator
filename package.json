@@ -16,8 +16,12 @@
     "vite": "^8.0.12"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@tailwindcss/vite": "^4.3.0",
+    "d3-polygon": "^3.0.1",
     "lucide": "^1.17.0",
+    "sweetalert2": "^11.26.25",
     "three": "^0.184.0"
   }
 }
