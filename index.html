@@ -4,8 +4,8 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>DitherFile</title>
-      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-CK7M0g0k.js"></script>
-      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-CMmx0156.css">
+      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-DlwLrsfL.js"></script>
+      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-BJNduLK1.css">
     </head>
     <body class="bg-ApplyDark">
         <!-- Canvas for the 3D Space -->
@@ -38,23 +38,23 @@
 
         <!-- Labels and Slider Controls -->
         <div
-            class="slider-container absolute right-[0.4vw] top-[1vh] w-[19.6vw] ml-[0.4vw] flex flex-col h-[98vh] bg-ApplyWhite rounded-2xl p-8 text-xs gap-8 font-AlbraLight"
+            class="slider-container absolute right-[0.4vw] top-[1vh] w-[19.6vw] ml-[0.4vw] flex flex-col h-[98vh] bg-ApplyWhite rounded-2xl p-8 text-xs gap-6 font-AlbraLight"
         >
-            <img src="/JB-ApplyAi-DitherGenerator/assets/LogoApplyAI-C3Jl3SRp.svg" class="px-8 pt-8" />
+            <img src="/JB-ApplyAi-DitherGenerator/assets/LogoApplyAI-C3Jl3SRp.svg" class="px-8 pb-4" />
             <h1 class="text-base leading-6 text-center">
                 Click and drag in the orange space to pan around the object.
                 Upload a png that has a clear subject with good contrast and a
                 transparent background.
             </h1>
 
-            <div class="flex-row flex gap-4">
+            <div class="flex-row flex mt-6">
                 <label
                     for="pickImage"
-                    class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
+                    class="group w-20 place-items-center place-content-center cursor-default"
                 >
                     <i
                         data-lucide="image-up"
-                        class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                        class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8 cursor-pointer"
                     ></i>
 
                     <input
@@ -64,39 +64,61 @@
                         class="hidden"
                     />
                 </label>
+
                 <div
                     id="modeSelect"
-                    class="group w-full flex flex-row text-center leading-10 place-items-center cursor-pointer place-content-center rounded-2xl outline-1 outline-ApplyDark"
+                    class="group w-full flex flex-row h-12 text-center leading-10 place-items-center cursor-pointer place-content-center rounded-2xl outline-1 outline-ApplyDark"
                 >
                     <i
                         data-lucide="chevron-down"
                         class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-6 mr-4"
                     ></i>
-                    <span class="text-base font-AlbraSans">
+                    <span class="text-base font-AlbraSans select-none">
                         [Dev] Select Mode</span
                     >
                 </div>
             </div>
 
             <div
-                class="flex flex-row justify-center items-center text-applyDark cursor-pointer"
+                class="flex flex-row justify-center items-center text-applyDark cursor-default my-6"
             >
                 <div
                     id="focusCamera"
-                    class="group w-20 h-20 place-items-center place-content-center"
+                    class="group w-20 place-items-center place-content-center cursor-default"
                 >
                     <i
                         data-lucide="focus"
+                        class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8 cursor-pointer"
+                    ></i>
+                </div>
+                <div class="border border-b-ApplyDark h-10 mr-6"></div>
+
+                <div
+                    id="rotationAnimation"
+                    class="group w-20 place-items-center place-content-center cursor-pointer"
+                >
+                    <i
+                        data-lucide="snail"
+                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+                </div>
+
+                <div
+                    id="spinAnimation"
+                    class="group w-20 place-items-center place-content-center cursor-pointer"
+                >
+                    <i
+                        data-lucide="circle-gauge"
                         class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
                     ></i>
                 </div>
 
                 <div
                     id="rotationAnimation"
-                    class="group w-20 h-20 place-items-center place-content-center"
+                    class="group w-20 place-items-center place-content-center cursor-pointer"
                 >
                     <i
-                        data-lucide="shell"
+                        data-lucide="volleyball"
                         class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
                     ></i>
                 </div>
@@ -211,7 +233,7 @@
                         >[Dev] Gravitational Pull</span
                     >
                     <span class="font-AlbraMedium">
-                        How much the edges attract the particles</span
+                        Gravitational pull on the particles</span
                     >
                 </label>
                 <input
@@ -225,27 +247,45 @@
                 />
             </div>
             <div
-                class="flex flex-row justify-center items-center text-applyDark cursor-pointer"
+                class="flex flex-row justify-center items-center text-applyDark cursor-default mt-2"
             >
                 <div
-                    id="exportPhoto"
                     class="group w-20 h-20 place-items-center place-content-center"
                 >
+                    <i data-lucide="file-down" class="w-8 h-8"></i>
+                </div>
+
+                <div class="border border-b-ApplyDark h-10 mr-6"></div>
+
+                <a
+                    id="export3D"
+                    class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
+                >
                     <i
-                        data-lucide="camera-off"
+                        data-lucide="box"
+                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                    ></i>
+                </a>
+
+                <div
+                    id="exportPhoto"
+                    class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
+                >
+                    <i
+                        data-lucide="camera"
                         class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
                     ></i>
                 </div>
 
-                <div
+                <a
                     id="exportVideo"
-                    class="group w-20 h-20 place-items-center place-content-center"
+                    class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
                 >
                     <i
-                        data-lucide="video-off"
+                        data-lucide="video"
                         class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
                     ></i>
-                </div>
+                </a>
             </div>
         </div>
 
