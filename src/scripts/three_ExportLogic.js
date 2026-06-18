@@ -1,9 +1,9 @@
 import * as THREE from "three";
+import { composer } from "./three_sceneLogic.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile, toBlobURL } from "@ffmpeg/util";
-import { SVGRenderer } from "three/addons/renderers/SVGRenderer.js";
-import paper from "paper";
+import { fetchFile } from "@ffmpeg/util";
+import polygonClipping from "polygon-clipping";
 
 const ffmpeg = new FFmpeg();
 
@@ -28,7 +28,7 @@ export async function export3D(scene) {
           object.getMatrixAt(i, matrix);
           matrix.decompose(position, quaternion, scale);
 
-          if (scale.x < 1.1) {
+          if (scale.x < 1) {
             continue;
           }
 
@@ -57,6 +57,43 @@ export async function export3D(scene) {
 }
 
 // --- Export Image Logic ---
+
+export function exportToJPG(scene, renderer, camera) {
+  if (!scene || !renderer || !camera) {
+    console.error(
+      "Something went wrong with Three.JS — Fundamental objects missing",
+    );
+    return null;
+  }
+
+  const canvasContainer = renderer.domElement.parentElement;
+  const currentBgColor = canvasContainer
+    ? window.getComputedStyle(canvasContainer).backgroundColor
+    : "0xf43b00";
+
+  const originalBackground = scene.background;
+
+  scene.background = new THREE.Color(currentBgColor);
+
+  scene.traverse((object) => {
+    if (object.isCamera) {
+      camera = object;
+    }
+  });
+
+  if (composer) {
+    composer.render();
+  } else {
+    renderer.render(scene, camera);
+  }
+
+  const dataURL = renderer.domElement.toDataURL("image/jpeg", 1.0);
+
+  scene.background = originalBackground;
+
+  return dataURL;
+}
+
 export function exportToPNG(scene, renderer, camera) {
   if (!scene || !renderer || !camera) {
     console.error(
@@ -71,103 +108,221 @@ export function exportToPNG(scene, renderer, camera) {
     }
   });
 
-  renderer.render(scene, camera);
+  if (composer) {
+    composer.render();
+  } else {
+    renderer.render(scene, camera);
+  }
 
   const dataURL = renderer.domElement.toDataURL("image/png");
   return dataURL;
 }
 
-// Default export of an SVG from the scene — created from all triangles that make up each shape (A mess of an SVG file)
-export function convertToSVG_export(scene, camera) {
-  const tempMeshes = [];
-  const instancesToHide = [];
+function convertToSVG_export(scene, camera) {
+  console.log("Starting Conversion of 3D Scene to SVG.");
 
-  const exportMaterial = new THREE.MeshBasicMaterial({
-    color: 0x000000,
-    side: THREE.FrontSide,
-  });
+  const canvasWidth = window.innerWidth;
+  const canvasHeight = window.innerHeight;
 
-  console.log("    a. Recreating the scene...");
+  // Hoist reusable objects outside loops to prevent massive garbage collection lag
+  const matrix = new THREE.Matrix4();
+  const instanceScale = new THREE.Vector3();
+  const vector = new THREE.Vector3();
+  const svgPaths = [];
+
+  camera.updateMatrixWorld();
+
   scene.traverse((object) => {
-    if (object.isInstancedMesh) {
-      // Hide the instanced meshes
-      instancesToHide.push(object);
-      object.visible = false;
+    if (!object.isInstancedMesh) return;
 
-      const matrix = new THREE.Matrix4();
-      const dummyPosition = new THREE.Vector3();
-      const dummyRotation = new THREE.Quaternion();
-      const dummyScale = new THREE.Vector3();
+    const posAttr = object.geometry.attributes.position;
 
-      // Create a new grid of meshes outside of the instanced mesh
-      for (let i = 0; i < object.count; i++) {
-        object.getMatrixAt(i, matrix);
+    for (let i = 0; i < object.count; i++) {
+      object.getMatrixAt(i, matrix);
+      matrix.premultiply(object.matrixWorld);
 
-        matrix.decompose(dummyPosition, dummyRotation, dummyScale);
+      // Extract scale to respect your threshold
+      instanceScale.setFromMatrixScale(matrix);
+      if (instanceScale.x <= 1) continue;
 
-        // Only add to the array if the dot isnt hidden
-        if (dummyScale.x <= 1) {
-          continue;
-        }
+      const pathPoints = [];
 
-        // Create individual meshes (not instanced) for each dot in the loop
-        const singleMesh = new THREE.Mesh(object.geometry, exportMaterial);
+      for (let v = 0; v < posAttr.count; v++) {
+        vector.fromBufferAttribute(posAttr, v);
 
-        singleMesh.position.copy(dummyPosition);
-        singleMesh.quaternion.copy(dummyRotation);
-        singleMesh.scale.copy(dummyScale);
+        // Native Three.js matrix transformation is vastly faster than manual decomposition math
+        vector.applyMatrix4(matrix);
+        vector.project(camera);
 
-        singleMesh.updateMatrix();
-        singleMesh.applyMatrix4(object.matrixWorld);
+        const x = (vector.x + 1) * 0.5 * canvasWidth;
+        const y = -(vector.y - 1) * 0.5 * canvasHeight;
 
-        scene.add(singleMesh);
-        tempMeshes.push(singleMesh);
+        pathPoints.push(
+          `${v === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`,
+        );
       }
+
+      svgPaths.push(`<path d="${pathPoints.join(" ")} Z" fill="black" />`);
     }
   });
 
-  console.log("    b. Rendering to SVG...");
-  const svgRenderer = new SVGRenderer();
-  svgRenderer.setSize(window.innerWidth, window.innerHeight);
-  svgRenderer.setPrecision(8);
+  console.log("Completed Conversion of 3D Scene to SVG.");
 
-  svgRenderer.render(scene, camera);
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">
+      ${svgPaths.join("\n")}
+    </svg>
+  `;
+}
 
-  // Remove the temporary instances
-  tempMeshes.forEach((mesh) => {
-    scene.remove(mesh);
+function convertToSVG_refine(svgString) {
+  // Parse raw SVG text into a traversable virtual DOM
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgString, "image/svg+xml");
+  const paths = doc.querySelectorAll("path");
+
+  // Set canvas boundaries based on the source or viewport sizing
+  const canvasWidth =
+    doc.documentElement.getAttribute("width") || window.innerWidth;
+  const canvasHeight =
+    doc.documentElement.getAttribute("height") || window.innerHeight;
+  const finalSvgPaths = [];
+
+  console.log(
+    `Starting SVG geometry refinement across ${paths.length} nodes...`,
+  );
+
+  paths.forEach((path, index) => {
+    // Extract the coordinate commands string from the path attribute
+    const dAttr = path.getAttribute("d");
+    if (!dAttr) return;
+
+    // Parse flat string numbers into an array of floats
+    const coords = dAttr.match(/[-+]?[0-9]*\.?[0-9]+/g);
+    if (!coords) return;
+
+    // Structure flat coordinates into MultiPolygon triangle arrays
+    const triangles = [];
+    for (let i = 0; i < coords.length; i += 6) {
+      if (i + 5 >= coords.length) break;
+
+      const pA = [Number(coords[i]), Number(coords[i + 1])];
+      const pB = [Number(coords[i + 2]), Number(coords[i + 3])];
+      const pC = [Number(coords[i + 4]), Number(coords[i + 5])];
+
+      triangles.push([[pA, pB, pC, pA]]);
+    }
+
+    if (triangles.length === 0) return;
+
+    let unified = null;
+
+    // --- SHAPE BUILDING PIPELINE ---
+    try {
+      // PASS 1: High-Precision Native Batch Melt
+      unified = polygonClipping.union(...triangles);
+    } catch (initialError) {
+      try {
+        // PASS 2: Float-Snapping Core Fix (Handles decimal rounding anomalies)
+        const roundedTriangles = triangles.map((polygon) => {
+          const roundedRing = polygon[0].map((pt) => [
+            Math.round(pt[0] * 10) / 10,
+            Math.round(pt[1] * 10) / 10,
+          ]);
+          return [roundedRing];
+        });
+
+        unified = polygonClipping.union(...roundedTriangles);
+        console.log(
+          `Fixed geometry variance via rounding for dot #${index + 1}`,
+        );
+      } catch (roundingError) {
+        try {
+          // PASS 3: Micro-Jitter Nudge (Disentangles complex overlapping knots)
+          const nudgedTriangles = triangles.map((polygon, polyIdx) => {
+            const nudgedRing = polygon[0].map((pt, ptIdx) => {
+              if (ptIdx === 3) return null;
+
+              // Applies an invisible, deterministic fraction shift to separate overlapping edges
+              const nudgeX = (((polyIdx * 4 + ptIdx) % 5) - 2) * 0.02;
+              const nudgeY = (((polyIdx * 4 + ptIdx) % 7) - 3) * 0.02;
+              return [pt[0] + nudgeX, pt[1] + nudgeY];
+            });
+            nudgedRing[3] = nudgedRing[0]; // Maintain valid loop closure criteria
+            return [nudgedRing];
+          });
+
+          unified = polygonClipping.union(...nudgedTriangles);
+          console.log(
+            `Disentangled structural knot via micro-jitter for dot #${index + 1}`,
+          );
+        } catch (nudgeError) {
+          console.error(`Critical: Unable to repair dot #${index + 1}`);
+        }
+      }
+    }
+
+    // Convert shape built polygon data structures back to standard SVG path syntax
+    if (unified) {
+      const unifiedPathData = [];
+
+      unified.forEach((polygon) => {
+        const outerRing = polygon[0];
+        outerRing.forEach((pt, idx) => {
+          unifiedPathData.push(
+            `${idx === 0 ? "M" : "L"}${pt[0].toFixed(2)} ${pt[1].toFixed(2)}`,
+          );
+        });
+        unifiedPathData.push("Z");
+      });
+
+      if (unifiedPathData.length > 0) {
+        finalSvgPaths.push(
+          `<path d="${unifiedPathData.join(" ")}" fill="black" stroke="none" />`,
+        );
+      }
+    } else {
+      // Safety Fallback: If all processing modes fail, preserve original raw wireframe asset but color it red
+      let redPath = path.outerHTML;
+
+      redPath = redPath.includes("fill=")
+        ? redPath.replace(/fill="[^"]*"/g, 'fill="red"')
+        : redPath.replace("<path", '<path fill="red"');
+
+      redPath = redPath.includes("stroke=")
+        ? redPath.replace(/stroke="[^"]*"/g, 'stroke="red"')
+        : redPath.replace("<path", '<path stroke="red"');
+
+      finalSvgPaths.push(redPath);
+    }
   });
 
-  exportMaterial.dispose();
+  console.log("SVG refinement processing complete.");
 
-  console.log("    c. Reconstructing the scene...");
-  instancesToHide.forEach((inst) => {
-    inst.visible = true;
+  // Compile everything back into a fully formed standalone SVG document string
+  const finalSvgDocument = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">
+      ${finalSvgPaths.join("\n")}
+    </svg>
+  `.trim();
+
+  // Pack string memory into a file blob pointer for automatic browser downloads
+  const blob = new Blob([finalSvgDocument], {
+    type: "image/svg+xml;charset=utf-8",
   });
-
-  // SVG renderer setup
-  const svgElement = svgRenderer.domElement;
-  svgElement.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-
-  return svgElement.outerHTML;
+  return URL.createObjectURL(blob);
 }
 
 export function convertToSVG(scene, camera) {
-  console.log("1. Generating raw 3D SVG layout...");
   const rawSvg = convertToSVG_export(scene, camera);
-
   if (!rawSvg) {
     throw new Error("Failed to generate raw SVG from Three.js");
   }
-
-  console.log("2. Melting shapes together with Paper.js...");
-  const finalSvgUrl = convertToSVG_refine(rawSvg);
-
-  return finalSvgUrl;
+  return convertToSVG_refine(rawSvg);
 }
 
-// --- Export Transparent WebM Video  ---
-export function exportVid(renderer, durationInSeconds = 5) {
+// --- Export Video Logic ---
+export function exportWEBM(renderer, durationInSeconds = 5) {
   return new Promise((resolve, reject) => {
     if (!renderer) {
       console.error("Renderer is required to capture video.");

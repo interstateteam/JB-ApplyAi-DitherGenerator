@@ -24,9 +24,10 @@ import {
 import {
   export3D,
   exportToPNG,
-  exportVid,
+  exportWEBM,
   convertToMOV,
-  convertToSVG_export,
+  exportToJPG,
+  convertToSVG,
   convertToMP4,
   cleanupTempFiles,
 } from "./scripts/three_exportLogic.js";
@@ -43,7 +44,7 @@ const scaleSliders = {
   gridScale: { min: 4, max: 12, action: "redraw" },
   pixelDistortion: { min: 0, max: 30, action: "redraw" },
   pixelGravity: { min: 0, max: 400, action: "redraw" },
-  clipDepth: { min: 500, max: 3000, action: "camera" },
+  clipDepth: { min: 1000, max: 3000, action: "camera" },
 };
 
 let currentImage = null;
@@ -151,16 +152,35 @@ function triggerDownload(url, filename, shouldRevoke = false) {
 
 // Shape Export (.glb)
 document.getElementById("export3D").addEventListener("click", async (e) => {
-  e.preventDefault();
+  if (e) e.preventDefault();
+
+  newSwal.fire({
+    title: "Exporting 3D Model",
+    text: "Packaging 3D assets and geometry. Please wait...",
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    didOpen: () => Swal.showLoading(),
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
   try {
-    const gltfData = await export3D(scene);
+    const modelUrl = export3D(scene);
 
-    const blob = new Blob([gltfData], { type: "application/octet-stream" });
-    const url = URL.createObjectURL(blob);
-
-    triggerDownload(url, "ApplyAi_DitheredShape.glb", true);
+    newSwal.fire({
+      title: "Finished",
+      text: "Your 3D model is ready.",
+      timer: 4000,
+      showConfirmButton: false,
+    });
+    triggerDownload(modelUrl, "ApplyAi_3DModel.gltf", true);
   } catch (error) {
-    console.error("3D export failed:", error);
+    Swal.fire("Error", "3D Export failed: " + error.message, "error");
+    console.error("3D export process failed:", error);
+  } finally {
+    if (modelUrl) {
+      URL.revokeObjectURL(modelUrl);
+    }
   }
 });
 
@@ -171,34 +191,67 @@ document.getElementById("exportPhoto").addEventListener("click", async (e) => {
   const result = await newSwal.fire({
     title: "Image Export",
     text: "Please choose a format.",
+    showDenyButton: true,
     showCancelButton: true,
     confirmButtonText: ".svg",
-    cancelButtonText: ".png",
+    denyButtonText: ".png",
+    cancelButtonText: ".jpg",
   });
+
+  // Guard clause: If the user clicked outside the box or pressed ESC, exit early
+  if (
+    result.dismiss === Swal.DismissReason.backdrop ||
+    result.dismiss === Swal.DismissReason.esc
+  ) {
+    console.log("Export cancelled by user.");
+    return;
+  }
+
+  let svgUrl = null;
 
   try {
     if (result.isConfirmed) {
-      triggerDownload(
-        URL.createObjectURL(
-          new Blob([convertToSVG_export(scene, camera)], {
-            type: "image/svg+xml",
-          }),
-        ),
-        "ApplyAi_DitheredVector.svg",
-        true,
-      );
-    } else if (result.dismiss === Swal.DismissReason.cancel) {
+      // 1. .svg Format Chosen
+      newSwal.fire({
+        title: "Generating SVG",
+        text: "\nConverting 3D to 2D\nThis may take a moment.",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      svgUrl = convertToSVG(scene, camera);
+
+      newSwal.fire({
+        title: "Finished",
+        text: "ApplyAi_DitheredVector.svg is ready.",
+        timer: 4000,
+        showConfirmButton: false,
+      });
+
+      triggerDownload(svgUrl, "ApplyAi_DitheredVector.svg", true);
+    } else if (result.isDenied) {
       triggerDownload(
         exportToPNG(scene, renderer, camera),
         "ApplyAi_DitheredSnapshot.png",
         false,
       );
-    } else {
-      console.log("Export cancelled by user.");
-      return;
+    } else if (result.dismiss === Swal.DismissReason.cancel) {
+      triggerDownload(
+        exportToJPG(scene, renderer, camera),
+        "ApplyAi_DitheredSnapshot.jpg",
+        false,
+      );
     }
   } catch (error) {
+    Swal.fire("Error", "Image generation failed: " + error.message, "error");
     console.error("Export configuration failed:", error);
+  } finally {
+    if (svgUrl) {
+      URL.revokeObjectURL(svgUrl);
+    }
   }
 });
 
@@ -208,8 +261,8 @@ document.getElementById("exportVideo").addEventListener("click", async (e) => {
 
   const result = await newSwal.fire({
     title: "Video Export",
-    text: "Enter a duration and select a file typefor the video.\nWebM is instant. MOV will take a while.\n\nLeave input blank to record the full animation",
-    showDenyButton: false,
+    text: "Enter a duration and select a file type for the video.\nWebM is instant. MOV will take a while.\n\nLeave input blank to record the full animation",
+    showDenyButton: true,
     showCancelButton: true,
     confirmButtonText: ".mov",
     denyButtonText: ".mp4",
@@ -223,7 +276,6 @@ document.getElementById("exportVideo").addEventListener("click", async (e) => {
       const cancelBtn = Swal.getCancelButton();
       cancelBtn.onclick = () => {
         const inputVal = Swal.getInput().value;
-        // Close with a custom object. This object becomes 'result' in your main code.
         newSwal.close({
           isConfirmed: false,
           isDenied: false,
@@ -238,22 +290,25 @@ document.getElementById("exportVideo").addEventListener("click", async (e) => {
     result.dismiss === Swal.DismissReason.backdrop ||
     result.dismiss === Swal.DismissReason.esc
   ) {
+    console.log("Export cancelled by user.");
     return;
   }
 
-  const duration = result.value;
+  const duration = Number(result.value) || 8;
 
   newSwal.fire({
     title: "Exporting",
-    timer: duration < 5 ? 5 * 1000 : duration * 1000,
+    timer: Math.max(5, duration) * 1000,
     allowOutsideClick: false,
     allowEscapeKey: false,
-    text: `Recording the scene for ${duration} seconds.\n\n This box will close and finish rendering in the background`,
+    text: `Recording the scene for ${duration} seconds.\n\nThis box will close and finish rendering in the background. This may take some time.`,
     didOpen: () => Swal.showLoading(),
   });
 
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
   try {
-    const webmBlob = await exportVid(renderer, duration);
+    const webmBlob = await exportWEBM(renderer, duration);
     let downloadUrl, fileName;
 
     if (result.isConfirmed) {
@@ -266,11 +321,9 @@ document.getElementById("exportVideo").addEventListener("click", async (e) => {
       downloadUrl = URL.createObjectURL(webmBlob);
       fileName = "ApplyAi_Render.webm";
     } else {
-      console.log("returned");
       return;
     }
 
-    // 4. Success notification using template literals
     newSwal.fire({
       title: "Finished Rendering",
       text: `${fileName} is ready.`,
@@ -279,11 +332,17 @@ document.getElementById("exportVideo").addEventListener("click", async (e) => {
     });
 
     triggerDownload(downloadUrl, fileName, true);
-
-    await cleanupTempFiles();
   } catch (error) {
     Swal.fire("Error", "Export failed: " + error.message, "error");
     console.error("Video export/conversion failed:", error);
+  } finally {
+    if (
+      downloadUrl &&
+      typeof downloadUrl === "string" &&
+      downloadUrl.startsWith("blob:")
+    ) {
+      URL.revokeObjectURL(downloadUrl);
+    }
 
     await cleanupTempFiles();
   }

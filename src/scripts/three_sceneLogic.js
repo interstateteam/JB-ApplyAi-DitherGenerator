@@ -10,6 +10,7 @@ import {
 export let scene, camera, renderer, controls, material;
 export let pauseControl = false;
 let dynamicZoom = 1;
+export let composer = null;
 
 // --- Configuration ---
 const cameraSetup = {
@@ -114,7 +115,6 @@ export const initThree = (canvasId) => {
     requestAnimationFrame(animate);
 
     if (controls) {
-      // 1. Process movement
       updateCameraAnimation(controls);
 
       controls.update();
