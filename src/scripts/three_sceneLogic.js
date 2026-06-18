@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createPostProcessor } from "./thee_styleLogic.js";
+import {
+  updateCameraAnimation,
+  forcePauseAnimation,
+} from "./three_animationLogic.js";
 
 // --- Global State Exports ---
 export let scene, camera, renderer, controls, material;
@@ -8,7 +12,7 @@ export let pauseControl = false;
 let dynamicZoom = 1;
 
 // --- Configuration ---
-const CAMERA_CONFIG = {
+const cameraSetup = {
   position: { x: 0, y: 0, z: 1500 },
   target: { x: 0, y: 0, z: 500 },
   zoom: 1,
@@ -44,9 +48,8 @@ export const setCameraClipping = (distance) => {
 // Resets the camera to its initial state and pauses rotation
 export const resetCameraView = () => {
   if (!camera || !controls) return;
-  setPauseControl(true);
+  forcePauseAnimation();
   controls.reset();
-
   camera.zoom = dynamicZoom;
   camera.updateProjectionMatrix();
 };
@@ -70,11 +73,11 @@ export const initThree = (canvasId) => {
     2000,
   );
   camera.position.set(
-    CAMERA_CONFIG.position.x,
-    CAMERA_CONFIG.position.y,
-    CAMERA_CONFIG.position.z,
+    cameraSetup.position.x,
+    cameraSetup.position.y,
+    cameraSetup.position.z,
   );
-  camera.zoom = CAMERA_CONFIG.zoom;
+  camera.zoom = cameraSetup.zoom;
   camera.updateProjectionMatrix();
 
   // Renderer Setup
@@ -89,9 +92,9 @@ export const initThree = (canvasId) => {
   // Controls Setup (Pan/zoom/rotate with smooth damping)
   controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(
-    CAMERA_CONFIG.target.x,
-    CAMERA_CONFIG.target.y,
-    CAMERA_CONFIG.target.z,
+    cameraSetup.target.x,
+    cameraSetup.target.y,
+    cameraSetup.target.z,
   );
   controls.enableDamping = true;
   controls.dampingFactor = 0.5;
@@ -109,10 +112,15 @@ export const initThree = (canvasId) => {
   // Animation Loop
   const animate = () => {
     requestAnimationFrame(animate);
-    if (controls) controls.update();
+
+    if (controls) {
+      // 1. Process movement
+      updateCameraAnimation(controls);
+
+      controls.update();
+    }
 
     renderer.render(scene, camera);
-    // composer.render(); // Swap with the line above if you enable post-processing
   };
   animate();
 

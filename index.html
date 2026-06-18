@@ -113,7 +113,7 @@
                 </div>
 
                 <div
-                    id="rotationAnimation"
+                    id="bounceAnimation"
                     class="group w-20 place-items-center place-content-center cursor-pointer"
                 >
                     <i
@@ -137,7 +137,7 @@
                     id="pixelAmount"
                     min="0"
                     max="100"
-                    value="50"
+                    value="80"
                     step="1"
                     class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />
@@ -225,11 +225,11 @@
             </div>
             <div class="flex flex-col gap-4">
                 <label
-                    for="gravityScale"
+                    for="pixelGravity"
                     class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
                 >
                     <span class="font-AlbraLight text-xl"
-                        >[Dev] Gravitational Pull</span
+                        >Gravitational Pull</span
                     >
                     <span class="font-AlbraMedium">
                         Gravitational pull on the particles</span
@@ -237,10 +237,10 @@
                 </label>
                 <input
                     type="range"
-                    id="gravityScale"
+                    id="pixelGravity"
                     min="0"
                     max="100"
-                    value="50"
+                    value="0"
                     step="1"
                     class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />

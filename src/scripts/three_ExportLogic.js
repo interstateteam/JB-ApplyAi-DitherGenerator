@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile } from "@ffmpeg/util";
+import { fetchFile, toBlobURL } from "@ffmpeg/util";
 import { SVGRenderer } from "three/addons/renderers/SVGRenderer.js";
+import paper from "paper";
 
 const ffmpeg = new FFmpeg();
 
@@ -56,7 +57,7 @@ export async function export3D(scene) {
 }
 
 // --- Export Image Logic ---
-export function exportImg(scene, renderer, camera) {
+export function exportToPNG(scene, renderer, camera) {
   if (!scene || !renderer || !camera) {
     console.error(
       "Something went wrong in with Three.JS — Fundamental objects missing",
@@ -76,42 +77,93 @@ export function exportImg(scene, renderer, camera) {
   return dataURL;
 }
 
-export function convertToSVG(scene, camera) {
-  scene.updateMatrixWorld(true);
-  camera.updateMatrixWorld(true);
-  camera.updateProjectionMatrix();
+// Default export of an SVG from the scene — created from all triangles that make up each shape (A mess of an SVG file)
+export function convertToSVG_export(scene, camera) {
+  const tempMeshes = [];
+  const instancesToHide = [];
 
-  let svgPaths = "";
-  const matrix = new THREE.Matrix4();
-  const vector = new THREE.Vector3();
+  const exportMaterial = new THREE.MeshBasicMaterial({
+    color: 0x000000,
+    side: THREE.FrontSide,
+  });
 
-  scene.traverse((obj) => {
-    if (obj.isInstancedMesh && obj.geometry) {
-      const { position } = obj.geometry.attributes;
+  console.log("    a. Recreating the scene...");
+  scene.traverse((object) => {
+    if (object.isInstancedMesh) {
+      // Hide the instanced meshes
+      instancesToHide.push(object);
+      object.visible = false;
 
-      for (let i = 0; i < obj.count; i++) {
-        obj.getMatrixAt(i, matrix);
+      const matrix = new THREE.Matrix4();
+      const dummyPosition = new THREE.Vector3();
+      const dummyRotation = new THREE.Quaternion();
+      const dummyScale = new THREE.Vector3();
 
-        // Draw the geometry for THIS specific instance
-        svgPaths += `<path d="`;
-        for (let j = 0; j < position.count; j++) {
-          vector.fromBufferAttribute(position, j);
-          vector.applyMatrix4(matrix); // Apply instance transform
-          vector.applyMatrix4(obj.matrixWorld); // Apply mesh world transform
-          vector.project(camera); // Project to screen
+      // Create a new grid of meshes outside of the instanced mesh
+      for (let i = 0; i < object.count; i++) {
+        object.getMatrixAt(i, matrix);
 
-          const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
-          const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+        matrix.decompose(dummyPosition, dummyRotation, dummyScale);
 
-          svgPaths += j === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
+        // Only add to the array if the dot isnt hidden
+        if (dummyScale.x <= 1) {
+          continue;
         }
-        svgPaths += `" fill="black" />`;
+
+        // Create individual meshes (not instanced) for each dot in the loop
+        const singleMesh = new THREE.Mesh(object.geometry, exportMaterial);
+
+        singleMesh.position.copy(dummyPosition);
+        singleMesh.quaternion.copy(dummyRotation);
+        singleMesh.scale.copy(dummyScale);
+
+        singleMesh.updateMatrix();
+        singleMesh.applyMatrix4(object.matrixWorld);
+
+        scene.add(singleMesh);
+        tempMeshes.push(singleMesh);
       }
     }
   });
 
-  const svgContent = `<svg width="${window.innerWidth}" height="${window.innerHeight}" xmlns="http://www.w3.org/2000/svg">${svgPaths}</svg>`;
-  return URL.createObjectURL(new Blob([svgContent], { type: "image/svg+xml" }));
+  console.log("    b. Rendering to SVG...");
+  const svgRenderer = new SVGRenderer();
+  svgRenderer.setSize(window.innerWidth, window.innerHeight);
+  svgRenderer.setPrecision(8);
+
+  svgRenderer.render(scene, camera);
+
+  // Remove the temporary instances
+  tempMeshes.forEach((mesh) => {
+    scene.remove(mesh);
+  });
+
+  exportMaterial.dispose();
+
+  console.log("    c. Reconstructing the scene...");
+  instancesToHide.forEach((inst) => {
+    inst.visible = true;
+  });
+
+  // SVG renderer setup
+  const svgElement = svgRenderer.domElement;
+  svgElement.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+  return svgElement.outerHTML;
+}
+
+export function convertToSVG(scene, camera) {
+  console.log("1. Generating raw 3D SVG layout...");
+  const rawSvg = convertToSVG_export(scene, camera);
+
+  if (!rawSvg) {
+    throw new Error("Failed to generate raw SVG from Three.js");
+  }
+
+  console.log("2. Melting shapes together with Paper.js...");
+  const finalSvgUrl = convertToSVG_refine(rawSvg);
+
+  return finalSvgUrl;
 }
 
 // --- Export Transparent WebM Video  ---
@@ -152,22 +204,22 @@ export function exportVid(renderer, durationInSeconds = 5) {
     };
 
     mediaRecorder.onstop = () => {
-      // Return the pure WebM Blob rather than a URL string so the converter can read it directly
-      const blob = new Blob(chunks, { type: "video/webm; codecs=vp9" });
+      // NOW that the recorder has stopped, we know the recording is safe
+      stream.getTracks().forEach((track) => track.stop());
+      const blob = new Blob(chunks, { type: "video/webm" });
       resolve(blob);
     };
 
     mediaRecorder.start();
-    console.log(`Recording started for ${durationInSeconds} seconds...`);
 
+    // Just stop the recorder here
     setTimeout(() => {
       mediaRecorder.stop();
-      stream.getTracks().forEach((track) => track.stop());
     }, durationInSeconds * 1000);
   });
 }
 
-export async function convertToMov(webmBlob) {
+export async function convertToMOV(webmBlob) {
   if (!webmBlob) {
     throw new Error("webmBlob parameter is required for conversion.");
   }
@@ -177,15 +229,12 @@ export async function convertToMov(webmBlob) {
   );
 
   try {
-    // Dynamically load the FFmpeg web assembly binaries if they aren't ready
     if (!ffmpeg.loaded) {
       await ffmpeg.load();
     }
 
-    // Write the WebM blob to FFmpeg's virtual file system
     await ffmpeg.writeFile("input.webm", await fetchFile(webmBlob));
 
-    // Run the ProRes 4444 translation command preserving the alpha/transparency channels
     await ffmpeg.exec([
       "-c:v",
       "libvpx-vp9",
@@ -200,17 +249,31 @@ export async function convertToMov(webmBlob) {
       "output.mov",
     ]);
 
-    // Read the processed transparent .mov out of virtual memory
     const movData = await ffmpeg.readFile("output.mov");
-
-    // Package it into a native QuickTime Blob
-    const movBlob = new Blob([movData.buffer], { type: "video/quicktime" });
-
-    // Generate a final downloadable object URL
-    const videoURL = URL.createObjectURL(movBlob);
-    return videoURL;
+    return URL.createObjectURL(
+      new Blob([movData.buffer], { type: "video/quicktime" }),
+    );
   } catch (err) {
+    // You MUST have this block to keep the 'try' block happy
     console.error("In-browser MOV conversion pipeline failed: ", err);
     throw err;
+  }
+}
+
+export async function convertToMP4(webmBlob) {
+  return;
+}
+
+export async function cleanupTempFiles(
+  files = ["input.webm", "output.mov", "output.mp4"],
+) {
+  for (const file of files) {
+    try {
+      // Check if file exists in the virtual FS first
+      await ffmpeg.deleteFile(file);
+      console.log(`Cleaned up: ${file}`);
+    } catch (e) {
+      // Ignore if file doesn't exist
+    }
   }
 }

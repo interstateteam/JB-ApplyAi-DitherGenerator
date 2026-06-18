@@ -55,6 +55,17 @@ body {
     width: 10rem;
     color: var(--color-ApplyWhite);
     font-family: var(--font-AlbraSans);
+
+    -webkit-appearance: none;
+    -moz-appearance: textfield;
+    appearance: none;
+}
+
+.swal2-input::placeholder {
+    color: var(--color-ApplyWhite);
+    opacity: 0.5;
+    font-family: var(--font-AlbraSans);
+    font-size: 16px;
 }
 
 .swal2-loader {
@@ -68,15 +79,14 @@ body {
     margin: 0;
 }
 
-/* Remove spin buttons for Firefox */
-.swal2-input {
-    -moz-appearance: textfield;
-}
-
 .cusSwal-popup {
     border-radius: 2rem;
     padding: 2rem;
     background-color: var(--color-ApplyDark);
+}
+
+.cusSwal-popup .swal2-input {
+    user-select: none;
 }
 
 .cusSwal-title {
@@ -91,7 +101,7 @@ body {
     color: var(--color-ApplyWhite);
     user-select: none;
     font-family: var(--font-AlbraLight);
-    margin: 0px;
+    margin: 0rem 0rem 1.8rem 0rem;
     padding: 0.4rem 0rem 0rem 0rem;
     white-space: pre-line;
 }
@@ -99,6 +109,7 @@ body {
 .cusSwal-button {
     border-radius: 1rem;
     background-color: var(--color-ApplyOrange);
+    border: 2px solid var(--color-ApplyOrange);
 
     color: var(--color-ApplyWhite);
     padding: 0.5rem 2.5rem;
