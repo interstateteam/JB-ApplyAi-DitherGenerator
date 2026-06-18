@@ -4,15 +4,15 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>DitherFile</title>
-      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-DlwLrsfL.js"></script>
-      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-BJNduLK1.css">
+      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-B87J--sP.js"></script>
+      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-CGaBLbsB.css">
     </head>
     <body class="bg-ApplyDark">
         <!-- Canvas for the 3D Space -->
-        <div class="relative w-[80vw] h-screen overflow-clip">
+        <div class="relative w-[70vw] xl:w-[80vw] h-screen overflow-clip">
             <!-- ESSENTIAL: 3D Canvas -->
             <div
-                class="absolute inset-[0.4vw] flex justify-center items-center bg-ApplyOrange rounded-2xl"
+                class="absolute inset-[0.4vw] flex justify-center items-center bg-ApplyOrange rounded-2xl overflow-clip"
             >
                 <canvas id="canvas"></canvas>
             </div>
@@ -38,10 +38,10 @@
 
         <!-- Labels and Slider Controls -->
         <div
-            class="slider-container absolute right-[0.4vw] top-[1vh] w-[19.6vw] ml-[0.4vw] flex flex-col h-[98vh] bg-ApplyWhite rounded-2xl p-8 text-xs gap-6 font-AlbraLight"
+            class="slider-container absolute right-[0.4vw] top-[0.4vw] w-[29.6vw] xl:w-[19.6vw] ml-[0.4vw] flex flex-col bottom-[0.4vw] bg-ApplyWhite rounded-2xl p-8 text-xs gap-[2vh] max-h-screen font-AlbraLight overflow-y-auto scrollbar-none"
         >
             <img src="/JB-ApplyAi-DitherGenerator/assets/LogoApplyAI-C3Jl3SRp.svg" class="px-8 pb-4" />
-            <h1 class="text-base leading-6 text-center">
+            <h1 class="text-base text-center">
                 Click and drag in the orange space to pan around the object.
                 Upload a png that has a clear subject with good contrast and a
                 transparent background.
@@ -114,7 +114,7 @@
                 </div>
 
                 <div
-                    id="rotationAnimation"
+                    id="bounceAnimation"
                     class="group w-20 place-items-center place-content-center cursor-pointer"
                 >
                     <i
@@ -123,7 +123,7 @@
                     ></i>
                 </div>
             </div>
-            <div class="flex flex-col gap-4">
+            <div class="flex flex-col">
                 <label
                     for="pixelAmount"
                     class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
@@ -138,12 +138,12 @@
                     id="pixelAmount"
                     min="0"
                     max="100"
-                    value="50"
+                    value="80"
                     step="1"
                     class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />
             </div>
-            <div class="flex flex-col gap-4">
+            <div class="flex flex-col">
                 <label
                     for="pixelScale"
                     class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
@@ -163,7 +163,7 @@
                     class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />
             </div>
-            <div class="flex flex-col gap-4">
+            <div class="flex flex-col">
                 <label
                     for="gridScale"
                     class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
@@ -183,7 +183,7 @@
                     class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />
             </div>
-            <div class="flex flex-col gap-4">
+            <div class="flex flex-col">
                 <label
                     for="pixelDistortion"
                     class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
@@ -204,7 +204,7 @@
                 />
             </div>
 
-            <div class="flex flex-col gap-4">
+            <div class="flex flex-col">
                 <label
                     for="clipDepth"
                     class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
@@ -224,13 +224,13 @@
                     class="appearance-none cursor-pointer accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />
             </div>
-            <div class="flex flex-col gap-4">
+            <div class="flex flex-col">
                 <label
-                    for="gravityScale"
+                    for="pixelGravity"
                     class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
                 >
                     <span class="font-AlbraLight text-xl"
-                        >[Dev] Gravitational Pull</span
+                        >Gravitational Pull</span
                     >
                     <span class="font-AlbraMedium">
                         Gravitational pull on the particles</span
@@ -238,10 +238,10 @@
                 </label>
                 <input
                     type="range"
-                    id="gravityScale"
+                    id="pixelGravity"
                     min="0"
                     max="100"
-                    value="50"
+                    value="0"
                     step="1"
                     class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />
