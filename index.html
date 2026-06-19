@@ -4,17 +4,21 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>DitherFile</title>
-      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-B87J--sP.js"></script>
-      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-CGaBLbsB.css">
+      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-CbZ59VBm.js"></script>
+      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-CbeY2kr7.css">
     </head>
     <body class="bg-ApplyDark">
         <!-- Canvas for the 3D Space -->
-        <div class="relative w-[70vw] xl:w-[80vw] h-screen overflow-clip">
+        <div class="relative w-[70vw] 2xl:w-[80vw] h-screen overflow-clip">
             <!-- ESSENTIAL: 3D Canvas -->
             <div
                 class="absolute inset-[0.4vw] flex justify-center items-center bg-ApplyOrange rounded-2xl overflow-clip"
             >
                 <canvas id="canvas"></canvas>
+                <canvas
+                    class="opacity-0 absolute w-[68.2vw] 2xl:w-[78.2vw] h-full inset-[0.4vw] outline-1 outline-amber-200 pointer-events-none"
+                    id="imgLoadCanvas"
+                ></canvas>
             </div>
 
             <!-- OPTIONAL: Page Decoration -->
@@ -36,154 +40,177 @@
             />
         </div>
 
-        <!-- Labels and Slider Controls -->
+        <!-- Control Box -->
         <div
-            class="slider-container absolute right-[0.4vw] top-[0.4vw] w-[29.6vw] xl:w-[19.6vw] ml-[0.4vw] flex flex-col bottom-[0.4vw] bg-ApplyWhite rounded-2xl p-8 text-xs gap-[2vh] max-h-screen font-AlbraLight overflow-y-auto scrollbar-none"
+            class="absolute right-[0.4vw] top-[0.4vw] bottom-[0.4vw] w-[29.6vw] 2xl:w-[19.6vw] ml-[0.4vw] bg-ApplyWhite rounded-2xl overflow-hidden shadow-sm"
         >
-            <img src="/JB-ApplyAi-DitherGenerator/assets/LogoApplyAI-C3Jl3SRp.svg" class="px-8 pb-4" />
-            <h1 class="text-base text-center">
-                Click and drag in the orange space to pan around the object.
-                Upload a png that has a clear subject with good contrast and a
-                transparent background.
-            </h1>
-
-            <div class="flex-row flex mt-6">
-                <label
-                    for="pickImage"
-                    class="group w-20 place-items-center place-content-center cursor-default"
-                >
-                    <i
-                        data-lucide="image-up"
-                        class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8 cursor-pointer"
-                    ></i>
-
-                    <input
-                        type="file"
-                        id="pickImage"
-                        accept="image/*"
-                        class="hidden"
-                    />
-                </label>
-
-                <div
-                    id="modeSelect"
-                    class="group w-full flex flex-row h-12 text-center leading-10 place-items-center cursor-pointer place-content-center rounded-2xl outline-1 outline-ApplyDark"
-                >
-                    <i
-                        data-lucide="chevron-down"
-                        class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-6 mr-4"
-                    ></i>
-                    <span class="text-base font-AlbraSans select-none">
-                        [Dev] Select Mode</span
-                    >
-                </div>
-            </div>
-
             <div
-                class="flex flex-row justify-center items-center text-applyDark cursor-default my-6"
+                class="slider-container w-full h-full flex flex-col p-8 text-xs gap-[2vh] font-AlbraLight overflow-y-auto scrollbar-none"
             >
-                <div
-                    id="focusCamera"
-                    class="group w-20 place-items-center place-content-center cursor-default"
-                >
-                    <i
-                        data-lucide="focus"
-                        class="transition-all duration-200 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8 cursor-pointer"
-                    ></i>
-                </div>
-                <div class="border border-b-ApplyDark h-10 mr-6"></div>
+                <!-- Intro -->
+                <img src="/JB-ApplyAi-DitherGenerator/assets/LogoApplyAI-C3Jl3SRp.svg" class="px-8 pb-4" />
+                <h1 class="text-base text-center">
+                    Click and drag in the orange space to pan around the object.
+                    Upload a png that has a clear subject with good contrast and
+                    a transparent background.
+                </h1>
 
-                <div
-                    id="rotationAnimation"
-                    class="group w-20 place-items-center place-content-center cursor-pointer"
-                >
-                    <i
-                        data-lucide="snail"
-                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
-                    ></i>
+                <!-- Image and Mode Choice -->
+                <div class="flex-row flex mt-6 gap-4 ml-1">
+                    <label
+                        for="pickImage"
+                        class="group w-20 place-items-center place-content-center cursor-default"
+                    >
+                        <i
+                            data-lucide="image-up"
+                            class="transition-all duration-100 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8 cursor-pointer"
+                        ></i>
+
+                        <input
+                            type="file"
+                            id="pickImage"
+                            accept="image/*"
+                            class="hidden"
+                        />
+                    </label>
+
+                    <div
+                        id="modeSelect"
+                        class="relative group w-full flex flex-row h-10 place-items-center rounded-4xl outline-1 outline-ApplyDark"
+                    >
+                        <i
+                            data-lucide="chevron-down"
+                            class="absolute left-4 transition-all duration-100 ease-out group-hover:scale-125 group-hover:text-ApplyOrange pointer-events-none z-10"
+                        ></i>
+
+                        <select
+                            id="backgroundColour"
+                            class="appearance-none w-full h-full text-center bg-transparent cursor-pointer font-AlbraSans text-sm select-none outline-none pl-12 pr-4 leading-10.5 transition-all duration-100 ease-out hover:text-ApplyOrange hover:scale-105"
+                        >
+                            <option value="" disabled selected hidden>
+                                Mode Selection
+                            </option>
+
+                            <option value="3DMode">3D Mode</option>
+                            <option value="Pattern Generator">
+                                Pattern Generator
+                            </option>
+                        </select>
+                    </div>
                 </div>
 
+                <!-- Animation Presets -->
                 <div
-                    id="spinAnimation"
-                    class="group w-20 place-items-center place-content-center cursor-pointer"
+                    class="flex flex-row justify-center items-center text-applyDark cursor-default my-6"
                 >
-                    <i
-                        data-lucide="circle-gauge"
-                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
-                    ></i>
+                    <div
+                        id="focusCamera"
+                        class="group w-20 place-items-center place-content-center cursor-default"
+                    >
+                        <i
+                            data-lucide="focus"
+                            class="transition-all duration-100 ease-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8 cursor-pointer"
+                        ></i>
+                    </div>
+                    <div class="border border-b-ApplyDark h-10 mr-6"></div>
+
+                    <div
+                        id="rotationAnimation"
+                        class="group w-20 place-items-center place-content-center cursor-pointer"
+                    >
+                        <i
+                            data-lucide="snail"
+                            class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                        ></i>
+                    </div>
+
+                    <div
+                        id="spinAnimation"
+                        class="group w-20 place-items-center place-content-center cursor-pointer"
+                    >
+                        <i
+                            data-lucide="circle-gauge"
+                            class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                        ></i>
+                    </div>
+
+                    <div
+                        id="bounceAnimation"
+                        class="group w-20 place-items-center place-content-center cursor-pointer"
+                    >
+                        <i
+                            data-lucide="volleyball"
+                            class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                        ></i>
+                    </div>
                 </div>
 
-                <div
-                    id="bounceAnimation"
-                    class="group w-20 place-items-center place-content-center cursor-pointer"
-                >
-                    <i
-                        data-lucide="volleyball"
-                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
-                    ></i>
+                <!-- Slider Controls -->
+                <div class="flex flex-col gap-4">
+                    <label
+                        for="pixelAmount"
+                        class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                    >
+                        <span class="font-AlbraLight text-lg"
+                            >Pixel Amount</span
+                        >
+                        <span class="font-AlbraMedium"
+                            >The amount of Pixels in the object</span
+                        >
+                    </label>
+                    <input
+                        type="range"
+                        id="pixelAmount"
+                        min="0"
+                        max="100"
+                        value="50"
+                        step="1"
+                        class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                    />
                 </div>
-            </div>
-            <div class="flex flex-col">
-                <label
-                    for="pixelAmount"
-                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
-                >
-                    <span class="font-AlbraLight text-xl">Pixel Amount</span>
-                    <span class="font-AlbraMedium"
-                        >The amount of Pixels in the object</span
+                <div class="flex flex-col gap-4">
+                    <label
+                        for="pixelScale"
+                        class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
                     >
-                </label>
-                <input
-                    type="range"
-                    id="pixelAmount"
-                    min="0"
-                    max="100"
-                    value="80"
-                    step="1"
-                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
-                />
-            </div>
-            <div class="flex flex-col">
-                <label
-                    for="pixelScale"
-                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
-                >
-                    <span class="font-AlbraLight text-xl">Pixel Scale</span>
-                    <span class="font-AlbraMedium"
-                        >The size for the individual pixels</span
+                        <span class="font-AlbraLight text-xl">Pixel Scale</span>
+                        <span class="font-AlbraMedium"
+                            >The size for the individual pixels</span
+                        >
+                    </label>
+                    <input
+                        type="range"
+                        id="pixelScale"
+                        min="0"
+                        max="100"
+                        value="50"
+                        step="1"
+                        class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                    />
+                </div>
+                <div class="flex flex-col gap-4">
+                    <label
+                        for="gridScale"
+                        class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
                     >
-                </label>
-                <input
-                    type="range"
-                    id="pixelScale"
-                    min="0"
-                    max="100"
-                    value="50"
-                    step="1"
-                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
-                />
-            </div>
-            <div class="flex flex-col">
-                <label
-                    for="gridScale"
-                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
-                >
-                    <span class="font-AlbraLight text-xl"> Grid Scale</span>
-                    <span class="font-AlbraMedium"
-                        >Increase the spacing on the Z-axis</span
-                    >
-                </label>
-                <input
-                    type="range"
-                    id="gridScale"
-                    min="0"
-                    max="100"
-                    value="50"
-                    step="1"
-                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
-                />
-            </div>
-            <div class="flex flex-col">
+                        <span class="font-AlbraLight text-xl"> Grid Scale</span>
+                        <span class="font-AlbraMedium"
+                            >Increase the spacing on the Z-axis</span
+                        >
+                    </label>
+                    <input
+                        type="range"
+                        id="gridScale"
+                        min="0"
+                        max="100"
+                        value="50"
+                        step="1"
+                        class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                    />
+                </div>
+
+                <!-- Reenable to turn on the slider for pixel distortion-->
+                <!--<div class="flex flex-col gap-4">
                 <label
                     for="pixelDistortion"
                     class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
@@ -202,93 +229,163 @@
                     step="1"
                     class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                 />
+            </div>-->
+
+                <div class="flex flex-col gap-4">
+                    <label
+                        for="clipDepth"
+                        class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                    >
+                        <span class="font-AlbraLight text-xl">Depth Slice</span>
+                        <span class="font-AlbraMedium"
+                            >Amount of dots that disappear</span
+                        >
+                    </label>
+                    <input
+                        type="range"
+                        id="clipDepth"
+                        min="0"
+                        max="100"
+                        value="100"
+                        step="1"
+                        class="appearance-none cursor-pointer accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                    />
+                </div>
+                <div class="flex flex-col gap-4">
+                    <label
+                        for="pixelGravity"
+                        class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                    >
+                        <span class="font-AlbraLight text-xl"
+                            >Gravitational Pull</span
+                        >
+                        <span class="font-AlbraMedium">
+                            Gravitational pull on the particles</span
+                        >
+                    </label>
+                    <input
+                        type="range"
+                        id="pixelGravity"
+                        min="0"
+                        max="100"
+                        value="0"
+                        step="1"
+                        class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                    />
+                </div>
+
+                <!-- Design Dropdowns -->
+                <div
+                    class="flex flex-row justify-center items-center text-applyDark cursor-default mt-8 gap-4"
+                >
+                    <div
+                        class="relative group w-full flex flex-row h-10 place-items-center rounded-4xl outline-1 outline-ApplyDark"
+                    >
+                        <i
+                            data-lucide="chevron-down"
+                            class="absolute left-4 transition-all duration-100 ease-out group-hover:scale-125 group-hover:text-ApplyOrange pointer-events-none z-10"
+                        ></i>
+
+                        <select
+                            id="pixelShape"
+                            class="appearance-none w-full h-full text-center bg-transparent cursor-pointer font-AlbraSans text-sm select-none outline-none pl-12 pr-4 leading-10.5 transition-all duration-100 ease-out hover:text-ApplyOrange hover:scale-105"
+                        >
+                            <option value="" disabled selected hidden>
+                                Shape
+                            </option>
+
+                            <option value="icosahedron">
+                                Pen Dot (Default)
+                            </option>
+                            <option value="box">Cube</option>
+                            <option value="sphere">Sphere</option>
+                            <option value="torus">Torus</option>
+                        </select>
+                    </div>
+                    <div
+                        class="relative group w-full flex flex-row h-10 place-items-center rounded-4xl outline-1 outline-ApplyDark"
+                    >
+                        <i
+                            data-lucide="chevron-down"
+                            class="absolute left-4 transition-all duration-100 ease-out group-hover:scale-125 group-hover:text-ApplyOrange pointer-events-none z-10"
+                        ></i>
+
+                        <select
+                            id="backgroundColour"
+                            class="appearance-none w-full h-full text-center bg-transparent cursor-pointer font-AlbraSans text-sm select-none outline-none pl-12 pr-4 leading-10.5 transition-all duration-100 ease-out hover:text-ApplyOrange hover:scale-105"
+                        >
+                            <option value="" disabled selected hidden>
+                                Backdrop
+                            </option>
+
+                            <option value="icosahedron">
+                                Orange (Default)
+                            </option>
+                            <option value="box">Black</option>
+                            <option value="sphere">White</option>
+                            <option value="torus">Maroon</option>
+                        </select>
+                    </div>
+                </div>
+                <div
+                    class="flex flex-row justify-center items-center text-applyDark cursor-default mt-2 relative"
+                >
+                    <div
+                        id="exportSpinner"
+                        class="export-spinner-container hidden"
+                    >
+                        <div class="export-logo-spin"></div>
+                    </div>
+                    <div
+                        class="group w-20 h-20 place-items-center place-content-center"
+                    >
+                        <i data-lucide="file-down" class="w-8 h-8"></i>
+                    </div>
+
+                    <div class="border border-b-ApplyDark h-10 mr-6"></div>
+
+                    <a
+                        id="export3D"
+                        class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
+                    >
+                        <i
+                            data-lucide="box"
+                            class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                        ></i>
+                    </a>
+
+                    <div
+                        id="exportPhoto"
+                        class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
+                    >
+                        <i
+                            data-lucide="camera"
+                            class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                        ></i>
+                    </div>
+
+                    <a
+                        id="exportVideo"
+                        class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
+                    >
+                        <i
+                            data-lucide="video"
+                            class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                        ></i>
+                    </a>
+                </div>
             </div>
 
-            <div class="flex flex-col">
-                <label
-                    for="clipDepth"
-                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
-                >
-                    <span class="font-AlbraLight text-xl">Depth Slice</span>
-                    <span class="font-AlbraMedium"
-                        >Amount of dots that disappear</span
-                    >
-                </label>
-                <input
-                    type="range"
-                    id="clipDepth"
-                    min="0"
-                    max="100"
-                    value="100"
-                    step="1"
-                    class="appearance-none cursor-pointer accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
-                />
-            </div>
-            <div class="flex flex-col">
-                <label
-                    for="pixelGravity"
-                    class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
-                >
-                    <span class="font-AlbraLight text-xl"
-                        >Gravitational Pull</span
-                    >
-                    <span class="font-AlbraMedium">
-                        Gravitational pull on the particles</span
-                    >
-                </label>
-                <input
-                    type="range"
-                    id="pixelGravity"
-                    min="0"
-                    max="100"
-                    value="0"
-                    step="1"
-                    class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
-                />
-            </div>
             <div
-                class="flex flex-row justify-center items-center text-applyDark cursor-default mt-2"
+                id="scrollIndicator"
+                class="absolute bottom-0 left-0 right-0 h-24 bg-linear-to-t from-ApplyWhite via-ApplyWhite/90 to-transparent pointer-events-none flex items-end justify-center pb-4 transition-opacity duration-300 opacity-0"
             >
-                <div
-                    class="group w-20 h-20 place-items-center place-content-center"
-                >
-                    <i data-lucide="file-down" class="w-8 h-8"></i>
-                </div>
-
-                <div class="border border-b-ApplyDark h-10 mr-6"></div>
-
-                <a
-                    id="export3D"
-                    class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
-                >
-                    <i
-                        data-lucide="box"
-                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
-                    ></i>
-                </a>
-
-                <div
-                    id="exportPhoto"
-                    class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
-                >
-                    <i
-                        data-lucide="camera"
-                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
-                    ></i>
-                </div>
-
-                <a
-                    id="exportVideo"
-                    class="group w-20 h-20 place-items-center place-content-center cursor-pointer"
-                >
-                    <i
-                        data-lucide="video"
-                        class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
-                    ></i>
-                </a>
+                <i
+                    data-lucide="chevron-down"
+                    class="w-6 h-6 text-ApplyDark animate-bounce"
+                ></i>
             </div>
         </div>
-
         <!-- Default Image -->
         <img
             id="defaultImage"
