@@ -350,13 +350,14 @@ export function convertToSVG(scene, camera) {
 // --- REFACTORED: Frame-By-Frame Export Video Logic ---
 
 // --- REFACTORED: Unified Single-Pass Video Render Engine ---
+// --- FIXED: Unified Single-Pass Video Render Engine ---
 export function exportVideo(
   renderer,
   scene,
   camera,
   durationInSeconds = 5,
-  format = "mp4", // 'mp4', 'mov', or 'webm'
-  bgColor = null, // Hex string or null for transparency
+  format = "mp4",
+  bgColor = null,
   onStartRecord,
 ) {
   return new Promise(async (resolve, reject) => {
@@ -374,10 +375,12 @@ export function exportVideo(
       await ffmpeg.load();
     }
 
-    // 1. Cache current viewport states
+    // 1. Cache current viewport states (Added left and right bounds caching)
     const originalSize = new THREE.Vector2();
     renderer.getSize(originalSize);
     const originalAspect = activeCamera.aspect;
+    const originalLeft = activeCamera.left; // 🌟 Cached
+    const originalRight = activeCamera.right; // 🌟 Cached
     const originalBackground = scene.background;
     const originalClearAlpha = renderer.getClearAlpha();
 
@@ -390,10 +393,19 @@ export function exportVideo(
       renderer.setClearAlpha(0);
     }
 
-    // 3. Scale up to target resolution
+    // 3. Scale up to target resolution and apply proper Orthographic scaling math
     renderer.setSize(targetWidth, targetHeight, false);
     if (composer) composer.setSize(targetWidth, targetHeight);
-    activeCamera.aspect = targetWidth / targetHeight;
+
+    const targetAspect = targetWidth / targetHeight;
+    if (activeCamera.isPerspectiveCamera) {
+      activeCamera.aspect = targetAspect;
+    } else if (activeCamera.isOrthographicCamera) {
+      // 🌟 Correctly recalculate boundaries based on target 2.5K aspect ratio
+      const frustumHeight = activeCamera.top - activeCamera.bottom;
+      activeCamera.left = -(frustumHeight * targetAspect) / 2;
+      activeCamera.right = (frustumHeight * targetAspect) / 2;
+    }
     activeCamera.updateProjectionMatrix();
 
     if (typeof onStartRecord === "function") {
@@ -403,8 +415,6 @@ export function exportVideo(
     const canvas = renderer.domElement;
     let frameCount = 0;
 
-    // Dynamic optimization: Use fast, lightweight JPEGs if background is solid (MP4)
-    // Use lossless PNGs only if background requires transparency (MOV/WebM)
     const mimeType = bgColor ? "image/jpeg" : "image/png";
     const extension = bgColor ? "jpg" : "png";
 
@@ -419,7 +429,6 @@ export function exportVideo(
         renderer.render(scene, activeCamera);
       }
 
-      // Capture frame snapshot directly from WebGL back buffer
       const frameBlob = await new Promise((res) => {
         canvas.toBlob(
           res,
@@ -453,7 +462,6 @@ export function exportVideo(
             `frame_%04d.${extension}`,
           ];
 
-          // 4. Set compilation flags based on the target design format
           if (format === "mp4") {
             ffmpegArgs.push(
               "-c:v",
@@ -463,7 +471,7 @@ export function exportVideo(
               "-pix_fmt",
               "yuv420p",
               "-crf",
-              "12", // Low value = razor-sharp dither arrays
+              "12",
               outFilename,
             );
           } else if (format === "mov") {
@@ -471,13 +479,12 @@ export function exportVideo(
               "-c:v",
               "prores_ks",
               "-profile:v",
-              "4", // ProRes 4444 preserves alpha transparent tracks
+              "4",
               "-pix_fmt",
               "yuva444p10le",
               outFilename,
             );
           } else {
-            // Native direct WebM fallback
             ffmpegArgs.push(
               "-c:v",
               "libvpx-vp9",
@@ -491,11 +498,9 @@ export function exportVideo(
             );
           }
 
-          // Run single compression execution pass
           await ffmpeg.exec(ffmpegArgs);
           const finalVideoData = await ffmpeg.readFile(outFilename);
 
-          // Return output pointer stream back to main UI wrapper
           const videoTypeMap = {
             mp4: "video/mp4",
             mov: "video/quicktime",
@@ -508,15 +513,22 @@ export function exportVideo(
           reject(err);
         } finally {
           // --- CLEANUP TIMELINE ---
-          // Re-align viewport back to UI preview standards
+          // Pass the original left and right coordinates back to the reset injector
           renderer.setSize(originalSize.x, originalSize.y, false);
           if (composer) composer.setSize(originalSize.x, originalSize.y);
-          activeCamera.aspect = originalAspect;
+
+          if (activeCamera.isPerspectiveCamera) {
+            activeCamera.aspect = originalAspect;
+          } else if (activeCamera.isOrthographicCamera) {
+            // 🌟 Restore original boundaries so preview layout snaps back perfectly
+            activeCamera.left = originalLeft;
+            activeCamera.right = originalRight;
+          }
           activeCamera.updateProjectionMatrix();
+
           scene.background = originalBackground;
           renderer.setClearAlpha(originalClearAlpha);
 
-          // Flush image snapshots from WASM heap allocation space to prevent memory exhaustion crashes
           for (let i = 0; i < frameCount; i++) {
             try {
               await ffmpeg.deleteFile(
