@@ -25,7 +25,6 @@ export async function export3D(scene) {
         const position = new THREE.Vector3();
         const quaternion = new THREE.Quaternion();
         const scale = new THREE.Vector3();
-        const color = new THREE.Color();
 
         for (let i = 0; i < count; i++) {
           object.getMatrixAt(i, matrix);
@@ -36,7 +35,6 @@ export async function export3D(scene) {
           }
 
           const dummyMesh = new THREE.Mesh(object.geometry, object.material);
-
           dummyMesh.applyMatrix4(matrix);
           exportGroup.add(dummyMesh);
         }
@@ -59,7 +57,7 @@ export async function export3D(scene) {
   });
 }
 
-// --- Export Image Logic ---
+// --- Resolution Setup Helpers ---
 
 function setupExportResolution(
   renderer,
@@ -76,11 +74,9 @@ function setupExportResolution(
 
   renderer.getSize(originalState.size);
 
-  // Apply target resolutions
   renderer.setSize(targetWidth, targetHeight, false);
   if (composer) composer.setSize(targetWidth, targetHeight);
 
-  // Update camera projection (with Perspective & Orthographic support)
   const targetAspect = targetWidth / targetHeight;
   if (activeCamera.isPerspectiveCamera) {
     activeCamera.aspect = targetAspect;
@@ -95,11 +91,9 @@ function setupExportResolution(
 }
 
 function restoreOriginalResolution(renderer, activeCamera, originalState) {
-  // Restore renderer size
   renderer.setSize(originalState.size.x, originalState.size.y, false);
   if (composer) composer.setSize(originalState.size.x, originalState.size.y);
 
-  // Restore camera state
   if (activeCamera.isPerspectiveCamera) {
     activeCamera.aspect = originalState.aspect;
   } else if (activeCamera.isOrthographicCamera) {
@@ -113,9 +107,7 @@ function restoreOriginalResolution(renderer, activeCamera, originalState) {
 
 export function exportToJPG(scene, renderer, camera) {
   if (!scene || !renderer || !camera) {
-    console.error(
-      "Something went wrong with Three.JS — Fundamental objects missing",
-    );
+    console.error("Fundamental objects missing");
     return null;
   }
 
@@ -124,7 +116,6 @@ export function exportToJPG(scene, renderer, camera) {
     if (object.isCamera) activeCamera = object;
   });
 
-  // 1. SETUP: Call the helper to resize and get the original state
   const originalState = setupExportResolution(
     renderer,
     activeCamera,
@@ -132,7 +123,6 @@ export function exportToJPG(scene, renderer, camera) {
     targetHeight,
   );
 
-  // 2. FORMAT SPECIFIC LOGIC: Handle JPG solid backgrounds
   const canvasContainer = renderer.domElement.parentElement;
   const currentBgColor = canvasContainer
     ? window.getComputedStyle(canvasContainer).backgroundColor
@@ -149,7 +139,6 @@ export function exportToJPG(scene, renderer, camera) {
 
   const dataURL = renderer.domElement.toDataURL("image/jpeg", 1.0);
 
-  // 3. TEARDOWN: Restore background and call the helper to restore sizing
   scene.background = originalBackground;
   restoreOriginalResolution(renderer, activeCamera, originalState);
 
@@ -158,9 +147,7 @@ export function exportToJPG(scene, renderer, camera) {
 
 export function exportToPNG(scene, renderer, camera) {
   if (!scene || !renderer || !camera) {
-    console.error(
-      "Something went wrong in with Three.JS — Fundamental objects missing",
-    );
+    console.error("Fundamental objects missing");
     return null;
   }
 
@@ -169,7 +156,6 @@ export function exportToPNG(scene, renderer, camera) {
     if (object.isCamera) activeCamera = object;
   });
 
-  // 1. SETUP: Call the helper to resize and get the original state
   const originalState = setupExportResolution(
     renderer,
     activeCamera,
@@ -177,7 +163,6 @@ export function exportToPNG(scene, renderer, camera) {
     targetHeight,
   );
 
-  // 2. FORMAT SPECIFIC LOGIC: Handle PNG transparency & alpha buffers
   const originalBackground = scene.background;
   const originalClearAlpha = renderer.getClearAlpha();
 
@@ -196,7 +181,6 @@ export function exportToPNG(scene, renderer, camera) {
 
   const dataURL = renderer.domElement.toDataURL("image/png");
 
-  // 3. TEARDOWN: Restore background/alpha and call the helper to restore sizing
   scene.background = originalBackground;
   renderer.setClearAlpha(originalClearAlpha);
   restoreOriginalResolution(renderer, activeCamera, originalState);
@@ -204,13 +188,12 @@ export function exportToPNG(scene, renderer, camera) {
   return dataURL;
 }
 
-function convertToSVG_export(scene, camera) {
-  console.log("Starting Conversion of 3D Scene to SVG.");
+// --- SVG Pipeline ---
 
+function convertToSVG_export(scene, camera) {
   const canvasWidth = window.innerWidth;
   const canvasHeight = window.innerHeight;
 
-  // Hoist reusable objects outside loops to prevent massive garbage collection lag
   const matrix = new THREE.Matrix4();
   const instanceScale = new THREE.Vector3();
   const vector = new THREE.Vector3();
@@ -227,7 +210,6 @@ function convertToSVG_export(scene, camera) {
       object.getMatrixAt(i, matrix);
       matrix.premultiply(object.matrixWorld);
 
-      // Extract scale to respect your threshold
       instanceScale.setFromMatrixScale(matrix);
       if (instanceScale.x <= 1) continue;
 
@@ -235,8 +217,6 @@ function convertToSVG_export(scene, camera) {
 
       for (let v = 0; v < posAttr.count; v++) {
         vector.fromBufferAttribute(posAttr, v);
-
-        // Native Three.js matrix transformation is vastly faster than manual decomposition math
         vector.applyMatrix4(matrix);
         vector.project(camera);
 
@@ -252,8 +232,6 @@ function convertToSVG_export(scene, camera) {
     }
   });
 
-  console.log("Completed Conversion of 3D Scene to SVG.");
-
   return `
     <svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">
       ${svgPaths.join("\n")}
@@ -262,32 +240,23 @@ function convertToSVG_export(scene, camera) {
 }
 
 function convertToSVG_refine(svgString) {
-  // Parse raw SVG text into a traversable virtual DOM
   const parser = new DOMParser();
   const doc = parser.parseFromString(svgString, "image/svg+xml");
   const paths = doc.querySelectorAll("path");
 
-  // Set canvas boundaries based on the source or viewport sizing
   const canvasWidth =
     doc.documentElement.getAttribute("width") || window.innerWidth;
   const canvasHeight =
     doc.documentElement.getAttribute("height") || window.innerHeight;
   const finalSvgPaths = [];
 
-  console.log(
-    `Starting SVG geometry refinement across ${paths.length} nodes...`,
-  );
-
   paths.forEach((path, index) => {
-    // Extract the coordinate commands string from the path attribute
     const dAttr = path.getAttribute("d");
     if (!dAttr) return;
 
-    // Parse flat string numbers into an array of floats
     const coords = dAttr.match(/[-+]?[0-9]*\.?[0-9]+/g);
     if (!coords) return;
 
-    // Structure flat coordinates into MultiPolygon triangle arrays
     const triangles = [];
     for (let i = 0; i < coords.length; i += 6) {
       if (i + 5 >= coords.length) break;
@@ -303,13 +272,10 @@ function convertToSVG_refine(svgString) {
 
     let unified = null;
 
-    // --- SHAPE BUILDING PIPELINE ---
     try {
-      // PASS 1: High-Precision Native Batch Melt
       unified = polygonClipping.union(...triangles);
     } catch (initialError) {
       try {
-        // PASS 2: Float-Snapping Core Fix (Handles decimal rounding anomalies)
         const roundedTriangles = triangles.map((polygon) => {
           const roundedRing = polygon[0].map((pt) => [
             Math.round(pt[0] * 10) / 10,
@@ -317,41 +283,28 @@ function convertToSVG_refine(svgString) {
           ]);
           return [roundedRing];
         });
-
         unified = polygonClipping.union(...roundedTriangles);
-        console.log(
-          `Fixed geometry variance via rounding for dot #${index + 1}`,
-        );
       } catch (roundingError) {
         try {
-          // PASS 3: Micro-Jitter Nudge (Disentangles complex overlapping knots)
           const nudgedTriangles = triangles.map((polygon, polyIdx) => {
             const nudgedRing = polygon[0].map((pt, ptIdx) => {
               if (ptIdx === 3) return null;
-
-              // Applies an invisible, deterministic fraction shift to separate overlapping edges
               const nudgeX = (((polyIdx * 4 + ptIdx) % 5) - 2) * 0.02;
               const nudgeY = (((polyIdx * 4 + ptIdx) % 7) - 3) * 0.02;
               return [pt[0] + nudgeX, pt[1] + nudgeY];
             });
-            nudgedRing[3] = nudgedRing[0]; // Maintain valid loop closure criteria
+            nudgedRing[3] = nudgedRing[0];
             return [nudgedRing];
           });
-
           unified = polygonClipping.union(...nudgedTriangles);
-          console.log(
-            `Disentangled structural knot via micro-jitter for dot #${index + 1}`,
-          );
         } catch (nudgeError) {
           console.error(`Critical: Unable to repair dot #${index + 1}`);
         }
       }
     }
 
-    // Convert shape built polygon data structures back to standard SVG path syntax
     if (unified) {
       const unifiedPathData = [];
-
       unified.forEach((polygon) => {
         const outerRing = polygon[0];
         outerRing.forEach((pt, idx) => {
@@ -368,31 +321,20 @@ function convertToSVG_refine(svgString) {
         );
       }
     } else {
-      // Safety Fallback: If all processing modes fail, preserve original raw wireframe asset but color it red
       let redPath = path.outerHTML;
-
       redPath = redPath.includes("fill=")
         ? redPath.replace(/fill="[^"]*"/g, 'fill="red"')
         : redPath.replace("<path", '<path fill="red"');
-
-      redPath = redPath.includes("stroke=")
-        ? redPath.replace(/stroke="[^"]*"/g, 'stroke="red"')
-        : redPath.replace("<path", '<path stroke="red"');
-
       finalSvgPaths.push(redPath);
     }
   });
 
-  console.log("SVG refinement processing complete.");
-
-  // Compile everything back into a fully formed standalone SVG document string
   const finalSvgDocument = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">
       ${finalSvgPaths.join("\n")}
     </svg>
   `.trim();
 
-  // Pack string memory into a file blob pointer for automatic browser downloads
   const blob = new Blob([finalSvgDocument], {
     type: "image/svg+xml;charset=utf-8",
   });
@@ -401,23 +343,23 @@ function convertToSVG_refine(svgString) {
 
 export function convertToSVG(scene, camera) {
   const rawSvg = convertToSVG_export(scene, camera);
-  if (!rawSvg) {
-    throw new Error("Failed to generate raw SVG from Three.js");
-  }
+  if (!rawSvg) throw new Error("Failed to generate raw SVG");
   return convertToSVG_refine(rawSvg);
 }
 
-// --- Export Video Logic ---
-// Change the bgColor default to null
-export function exportWEBM(
+// --- REFACTORED: Frame-By-Frame Export Video Logic ---
+
+// --- REFACTORED: Unified Single-Pass Video Render Engine ---
+export function exportVideo(
   renderer,
   scene,
   camera,
   durationInSeconds = 5,
-  bgColor = null, // 👈 Defaults to null (transparent)
+  format = "mp4", // 'mp4', 'mov', or 'webm'
+  bgColor = null, // Hex string or null for transparency
   onStartRecord,
 ) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     if (!renderer || !scene || !camera) {
       reject("Fundamental dependencies missing");
       return;
@@ -428,13 +370,18 @@ export function exportWEBM(
       if (object.isCamera) activeCamera = object;
     });
 
+    if (!ffmpeg.loaded) {
+      await ffmpeg.load();
+    }
+
+    // 1. Cache current viewport states
     const originalSize = new THREE.Vector2();
     renderer.getSize(originalSize);
     const originalAspect = activeCamera.aspect;
     const originalBackground = scene.background;
     const originalClearAlpha = renderer.getClearAlpha();
 
-    // 👈 CONDITIONAL BACKGROUND: Solid for MP4, transparent for MOV/WebM
+    // 2. Configure backgrounds based on format demands
     if (bgColor) {
       scene.background = new THREE.Color(bgColor);
       renderer.setClearAlpha(1);
@@ -443,163 +390,153 @@ export function exportWEBM(
       renderer.setClearAlpha(0);
     }
 
+    // 3. Scale up to target resolution
     renderer.setSize(targetWidth, targetHeight, false);
     if (composer) composer.setSize(targetWidth, targetHeight);
     activeCamera.aspect = targetWidth / targetHeight;
     activeCamera.updateProjectionMatrix();
 
-    if (typeof onStartRecord === "function") onStartRecord();
-
-    if (composer) {
-      composer.render();
-    } else {
-      renderer.render(scene, activeCamera);
+    if (typeof onStartRecord === "function") {
+      onStartRecord();
     }
 
     const canvas = renderer.domElement;
-    const stream = canvas.captureStream(30);
+    let frameCount = 0;
 
-    // Dynamic encoder settings based on transparency needs
-    const options = {
-      mimeType: "video/webm; codecs=vp9",
-      videoBitsPerSecond: 80000000, // Keeping your high-quality bitrate!
-    };
+    // Dynamic optimization: Use fast, lightweight JPEGs if background is solid (MP4)
+    // Use lossless PNGs only if background requires transparency (MOV/WebM)
+    const mimeType = bgColor ? "image/jpeg" : "image/png";
+    const extension = bgColor ? "jpg" : "png";
 
-    // 👈 Re-enable alpha channel allocations ONLY if we are transparent
-    if (!bgColor) {
-      options.alphaBits = 8;
-    }
+    console.log(
+      `--- Frame-By-Frame Direct-${format.toUpperCase()} Engine Initialized ---`,
+    );
 
-    let mediaRecorder;
-    try {
-      mediaRecorder = new MediaRecorder(stream, options);
-    } catch (e) {
-      mediaRecorder = new MediaRecorder(stream);
-    }
+    const captureNextFrame = async () => {
+      if (composer) {
+        composer.render();
+      } else {
+        renderer.render(scene, activeCamera);
+      }
 
-    const chunks = [];
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) chunks.push(e.data);
-    };
+      // Capture frame snapshot directly from WebGL back buffer
+      const frameBlob = await new Promise((res) => {
+        canvas.toBlob(
+          res,
+          mimeType,
+          mimeType === "image/jpeg" ? 0.98 : undefined,
+        );
+      });
 
-    mediaRecorder.onstop = () => {
-      stream.getTracks().forEach((track) => track.stop());
+      const frameName = `frame_${String(frameCount).padStart(4, "0")}.${extension}`;
+      await ffmpeg.writeFile(frameName, await fetchFile(frameBlob));
+      frameCount++;
 
-      renderer.setSize(originalSize.x, originalSize.y, false);
-      if (composer) composer.setSize(originalSize.x, originalSize.y);
-      activeCamera.aspect = originalAspect;
-      activeCamera.updateProjectionMatrix();
-      scene.background = originalBackground;
-      renderer.setClearAlpha(originalClearAlpha);
+      let isSequenceFinished = false;
+      if (typeof durationInSeconds === "number") {
+        if (frameCount >= durationInSeconds * 30) isSequenceFinished = true;
+      } else {
+        if (window.isAnimationLoopComplete) isSequenceFinished = true;
+      }
 
-      const blob = new Blob(chunks, { type: "video/webm" });
-      resolve(blob);
-    };
+      if (isSequenceFinished) {
+        console.log(
+          `Captured ${frameCount} pristine frames. Initializing direct compilation...`,
+        );
 
-    mediaRecorder.start();
+        try {
+          let outFilename = `output.${format}`;
+          let ffmpegArgs = [
+            "-framerate",
+            "30",
+            "-i",
+            `frame_%04d.${extension}`,
+          ];
 
-    if (typeof durationInSeconds === "number") {
-      setTimeout(() => {
-        mediaRecorder.stop();
-      }, durationInSeconds * 1000);
-    } else {
-      const monitorLoop = () => {
-        if (window.isAnimationLoopComplete) {
-          setTimeout(() => {
-            mediaRecorder.stop();
-          }, 500);
-        } else {
-          requestAnimationFrame(monitorLoop);
+          // 4. Set compilation flags based on the target design format
+          if (format === "mp4") {
+            ffmpegArgs.push(
+              "-c:v",
+              "libx264",
+              "-tune",
+              "animation",
+              "-pix_fmt",
+              "yuv420p",
+              "-crf",
+              "12", // Low value = razor-sharp dither arrays
+              outFilename,
+            );
+          } else if (format === "mov") {
+            ffmpegArgs.push(
+              "-c:v",
+              "prores_ks",
+              "-profile:v",
+              "4", // ProRes 4444 preserves alpha transparent tracks
+              "-pix_fmt",
+              "yuva444p10le",
+              outFilename,
+            );
+          } else {
+            // Native direct WebM fallback
+            ffmpegArgs.push(
+              "-c:v",
+              "libvpx-vp9",
+              "-crf",
+              "10",
+              "-b:v",
+              "0",
+              "-pix_fmt",
+              bgColor ? "yuv420p" : "yuva420p",
+              outFilename,
+            );
+          }
+
+          // Run single compression execution pass
+          await ffmpeg.exec(ffmpegArgs);
+          const finalVideoData = await ffmpeg.readFile(outFilename);
+
+          // Return output pointer stream back to main UI wrapper
+          const videoTypeMap = {
+            mp4: "video/mp4",
+            mov: "video/quicktime",
+            webm: "video/webm",
+          };
+          resolve(
+            new Blob([finalVideoData.buffer], { type: videoTypeMap[format] }),
+          );
+        } catch (err) {
+          reject(err);
+        } finally {
+          // --- CLEANUP TIMELINE ---
+          // Re-align viewport back to UI preview standards
+          renderer.setSize(originalSize.x, originalSize.y, false);
+          if (composer) composer.setSize(originalSize.x, originalSize.y);
+          activeCamera.aspect = originalAspect;
+          activeCamera.updateProjectionMatrix();
+          scene.background = originalBackground;
+          renderer.setClearAlpha(originalClearAlpha);
+
+          // Flush image snapshots from WASM heap allocation space to prevent memory exhaustion crashes
+          for (let i = 0; i < frameCount; i++) {
+            try {
+              await ffmpeg.deleteFile(
+                `frame_${String(i).padStart(4, "0")}.${extension}`,
+              );
+            } catch (e) {}
+          }
+          try {
+            await ffmpeg.deleteFile(`output.${format}`);
+          } catch (e) {}
         }
-      };
-      setTimeout(() => {
-        requestAnimationFrame(monitorLoop);
-      }, 200);
-    }
+      } else {
+        requestAnimationFrame(captureNextFrame);
+      }
+    };
+
+    setTimeout(() => {
+      requestAnimationFrame(captureNextFrame);
+    }, 200);
   });
-}
-
-export async function convertToMP4(webmBlob) {
-  if (!webmBlob) {
-    throw new Error("webmBlob parameter is required for conversion.");
-  }
-
-  console.log("Starting direct high-speed MP4 conversion...");
-
-  try {
-    if (!ffmpeg.loaded) {
-      await ffmpeg.load();
-    }
-
-    await cleanupTempFiles(["input.webm", "output.mp4"]);
-    await ffmpeg.writeFile("input.webm", await fetchFile(webmBlob));
-
-    // Clean, direct, high-speed layout conversion stream
-    await ffmpeg.exec([
-      "-i",
-      "input.webm",
-      "-c:v",
-      "libx264",
-      "-tune",
-      "animation",
-      "-pix_fmt",
-      "yuv420p",
-      "-crf",
-      "14",
-      "output.mp4",
-    ]);
-
-    const mp4Data = await ffmpeg.readFile("output.mp4");
-    await cleanupTempFiles(["input.webm", "output.mp4"]);
-
-    return URL.createObjectURL(
-      new Blob([mp4Data.buffer], { type: "video/mp4" }),
-    );
-  } catch (err) {
-    console.error("In-browser MP4 conversion pipeline failed: ", err);
-    await cleanupTempFiles(["input.webm", "output.mp4"]);
-    throw err;
-  }
-}
-export async function convertToMOV(webmBlob) {
-  if (!webmBlob) {
-    throw new Error("webmBlob parameter is required for conversion.");
-  }
-
-  console.log(
-    "Starting background transparency conversion to MOV (ProRes 4444)...",
-  );
-
-  try {
-    if (!ffmpeg.loaded) {
-      await ffmpeg.load();
-    }
-
-    await ffmpeg.writeFile("input.webm", await fetchFile(webmBlob));
-
-    await ffmpeg.exec([
-      "-c:v",
-      "libvpx-vp9",
-      "-i",
-      "input.webm",
-      "-c:v",
-      "prores_ks",
-      "-profile:v",
-      "4",
-      "-pix_fmt",
-      "yuva444p10le",
-      "output.mov",
-    ]);
-
-    const movData = await ffmpeg.readFile("output.mov");
-    return URL.createObjectURL(
-      new Blob([movData.buffer], { type: "video/quicktime" }),
-    );
-  } catch (err) {
-    // You MUST have this block to keep the 'try' block happy
-    console.error("In-browser MOV conversion pipeline failed: ", err);
-    throw err;
-  }
 }
 
 export async function cleanupTempFiles(
@@ -607,11 +544,8 @@ export async function cleanupTempFiles(
 ) {
   for (const file of files) {
     try {
-      // Check if file exists in the virtual FS first
       await ffmpeg.deleteFile(file);
       console.log(`Cleaned up: ${file}`);
-    } catch (e) {
-      // Ignore if file doesn't exist
-    }
+    } catch (e) {}
   }
 }

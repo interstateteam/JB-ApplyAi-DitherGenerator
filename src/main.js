@@ -26,11 +26,9 @@ import {
 import {
   export3D,
   exportToPNG,
-  exportWEBM,
-  convertToMOV,
+  exportVideo,
   exportToJPG,
   convertToSVG,
-  convertToMP4,
   cleanupTempFiles,
 } from "./scripts/three_exportLogic.js";
 import Swal from "sweetalert2";
@@ -434,50 +432,46 @@ window.addEventListener("load", () => {
       let downloadUrl = null;
       let fileName = null;
 
-      let chosenBgColor = null;
-
-      if (result.isDenied) {
-        chosenBgColor = "#f43b00";
-
-        if (currentBgColor.value === "ColourBlack") {
-          chosenBgColor = "#1a1a1a";
-        } else if (currentBgColor.value === "ColourMaroon") {
-          chosenBgColor = "#800000";
-        } else if (currentBgColor.value === "ColourWhite") {
-          chosenBgColor = "#ffffff";
-        }
-      }
-
       try {
-        const webmBlob = await exportWEBM(
+        // 1. Resolve target format extension directly from button submission context
+        let targetFormat = "webm";
+        if (result.isConfirmed) targetFormat = "mov";
+        if (result.isDenied) targetFormat = "mp4";
+
+        // 2. Resolve background tracking parameter state mappings
+        let chosenBgColor = null;
+        if (targetFormat === "mp4") {
+          chosenBgColor = "#f43b00"; // Orange default
+          if (currentBgColor.value === "ColourBlack") chosenBgColor = "#1a1a1a";
+          if (currentBgColor.value === "ColourMaroon")
+            chosenBgColor = "#800000";
+          if (currentBgColor.value === "ColourWhite") chosenBgColor = "#ffffff";
+        }
+
+        // 3. Fire unified single-pass composition pipeline execution
+        const videoBlob = await exportVideo(
           renderer,
           scene,
           camera,
           duration,
+          targetFormat,
           chosenBgColor,
           () => {
             if (duration === "auto") {
-              // 1. Wipe out any stale tracking values from old sessions
               window.exportRotatedAccumulator = 0;
               window.isAnimationLoopComplete = false;
 
-              // 2. Define loop targets explicitly so the timeline tracking matches perfectly
               const loopDurations = { default: 8, eased: 5, thirdMode: 6 };
               window.exportTargetDuration =
                 loopDurations[currentActiveAnimation] || 8;
 
-              // 3. Reset viewport focus layout alignments
               resetCameraView();
-              if (typeof controls !== "undefined") {
-                controls.update(); // Forces camera matrices to synchronize instantly
-              }
+              if (typeof controls !== "undefined") controls.update();
 
               handleAnimationSwitch(currentActiveAnimation, true);
-              if (typeof resetAnimationTimeline === "function") {
+              if (typeof resetAnimationTimeline === "function")
                 resetAnimationTimeline();
-              }
 
-              // 4. Activate high-precision tracking loop now that clock parameters are at absolute 0
               window.isExportingLoop = true;
             }
           },
@@ -485,24 +479,15 @@ window.addEventListener("load", () => {
 
         Swal.close();
 
-        if (result.isConfirmed || result.isDenied) {
+        // Show processing spinner for heavy conversions
+        if (targetFormat === "mov" || targetFormat === "mp4") {
           const spinner = document.getElementById("exportSpinner");
           if (spinner) spinner.classList.remove("hidden");
         }
 
-        if (result.isConfirmed) {
-          downloadUrl = await convertToMOV(webmBlob);
-          fileName = "ApplyAi_Render.mov";
-        } else if (result.isDenied) {
-          // Cleaned up! The background color is already baked into the webmBlob
-          downloadUrl = await convertToMP4(webmBlob);
-          fileName = "ApplyAi_Render.mp4";
-        } else if (result.isWebM) {
-          downloadUrl = URL.createObjectURL(webmBlob);
-          fileName = "ApplyAi_Render.webm";
-        } else {
-          return;
-        }
+        // 4. Direct download generation map assignments
+        downloadUrl = URL.createObjectURL(videoBlob);
+        fileName = `ApplyAi_Render.${targetFormat}`;
 
         newSwal.fire({
           title: "Finished Rendering",
@@ -511,7 +496,7 @@ window.addEventListener("load", () => {
           showConfirmButton: false,
         });
 
-        triggerDownload(downloadUrl, fileName, true);
+        triggerDownload(downloadUrl, fileName, targetFormat === "webm");
       } catch (error) {
         Swal.fire("Error", "Export failed: " + error.message, "error");
         console.error("Video export/conversion failed:", error);
@@ -519,7 +504,6 @@ window.addEventListener("load", () => {
         const spinner = document.getElementById("exportSpinner");
         if (spinner) spinner.classList.add("hidden");
 
-        // Clean up high-precision parameters and hand control back to preview mode
         window.isExportingLoop = false;
         window.exportRotatedAccumulator = undefined;
         window.exportTargetDuration = undefined;
@@ -534,11 +518,9 @@ window.addEventListener("load", () => {
             URL.revokeObjectURL(urlToRevoke);
           }, 2000);
         }
-
         await cleanupTempFiles();
       }
     });
-
   const container = document.querySelector(".slider-container");
   const indicator = document.getElementById("scrollIndicator");
 

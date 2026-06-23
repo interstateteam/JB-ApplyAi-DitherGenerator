@@ -84,7 +84,6 @@ body {
 .export-logo-spin {
     width: 24px;
     height: 24px;
-    background: url("./assets/LogoMarkFull.svg") no-repeat center center;
     background-size: contain;
     animation: expoSpin 1.2s cubic-bezier(0.85, 0, 0.15, 1) infinite;
 }
