@@ -1,4 +1,5 @@
 import "./style.css";
+import logoUrl from "./assets/LogoMarkFull.svg";
 import {
   initThree,
   resetCameraView,
@@ -175,7 +176,7 @@ const newSwal = Swal.mixin({
   allowOutsideClick: true,
   buttonsStyling: false,
   reverseButtons: true,
-  imageUrl: "src/assets/LogoMarkFull.svg",
+  imageUrl: logoUrl,
   imageWidth: 28,
   imageHeight: 28,
   imageAlt: "Logo",
@@ -422,8 +423,8 @@ window.addEventListener("load", () => {
         allowEscapeKey: false,
         text:
           duration === "auto"
-            ? "Recording 1 full seamless animation loop.\n\nThis box will close and finish rendering in the background."
-            : `Recording the scene for ${duration} seconds.\n\nThis box will close and finish rendering in the background. This will take some time.`,
+            ? "Recording 1 full seamless animation loop.\n\nThis box will close once the video has finished rendering. This will take some time."
+            : `Recording the scene for ${duration} seconds.\n\nThis box will close once the video has finished rendering. This will take some time.`,
         didOpen: () => Swal.showLoading(),
       });
 
