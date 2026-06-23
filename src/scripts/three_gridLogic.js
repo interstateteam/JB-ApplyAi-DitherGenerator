@@ -41,13 +41,13 @@ const createWarpedGeometry = (chaosLevel) => {
   return geometry;
 };
 
+// Restored to 0.25 so the 0-1000 slider packs enough punch to move dots across columns
 const calculateShift = (grad, gravity, spacing, maxShift) => {
-  const val = -grad * gravity * spacing * 0.2;
+  const val = -grad * gravity * spacing * 0.25;
   return Math.max(-maxShift, Math.min(maxShift, val));
 };
 
 // --- Main Export ---
-
 export const updateThreeGrid = (img, settings) => {
   if (!scene) return;
   cleanup();
@@ -58,8 +58,12 @@ export const updateThreeGrid = (img, settings) => {
     gridScale,
     pixelDistortion,
     pixelGravity = 0,
+    alignmentScale,
   } = settings;
   const chaosLevel = (pixelDistortion || 0) / 100;
+
+  // Normalize gravity to a 0.0 - 1.0 range for scaling calculations
+  const gravityNorm = Math.max(0, Math.min(100, pixelGravity)) / 100;
 
   currentGeometry = createWarpedGeometry(chaosLevel);
   const { cols, rows } = getGridDimensions(img, pixelAmount);
@@ -87,6 +91,11 @@ export const updateThreeGrid = (img, settings) => {
       // 1. Position & Gravity Shift
       let shiftX = 0,
         shiftY = 0;
+
+      // We calculate this outside the alpha check now so we can use it for scaling later
+      const smallnessInfluence =
+        brightness < 0.1 ? 0 : (brightness - 0.1) / 0.9;
+
       if (alpha > 0.01) {
         const getSafe = (c, r) =>
           getPixelData(
@@ -106,30 +115,44 @@ export const updateThreeGrid = (img, settings) => {
         };
 
         if (!Object.values(neighbors).some((n) => n.alpha <= 0.01)) {
-          const maxShift = spacing * 0.4;
-          shiftX = calculateShift(
+          // Allows dots to travel up to 5 grid spacings away to snap into lines
+          const maxShift = spacing * 5.0;
+
+          const rawShiftX = calculateShift(
             neighbors.right.brightness - neighbors.left.brightness,
             pixelGravity,
             spacing,
             maxShift,
           );
-          shiftY = calculateShift(
+          const rawShiftY = calculateShift(
             neighbors.down.brightness - neighbors.up.brightness,
             pixelGravity,
             spacing,
             maxShift,
           );
+
+          // Safety Check: If the HTML element doesn't exist yet, default factor to 1 (100% aligned)
+          const alignmentFactor = document.getElementById("alignmentScale")
+            ? alignmentScale / 100
+            : 1.0;
+
+          shiftX = rawShiftX * smallnessInfluence * alignmentFactor;
+          shiftY = rawShiftY * smallnessInfluence * alignmentFactor;
         }
       }
 
       // 2. Scale & Appearance
       const isBackground = alpha <= 0.05 || brightness > 0.9;
 
+      const fadeOutFactor = 1.0 - smallnessInfluence * gravityNorm;
+
       const baseScale = isBackground
         ? 0
         : (pixelScale / 100) *
           (gridScale / 5) *
-          (0.3 + Math.pow(1.0 - brightness, 2) * 1.5);
+          (0.3 + Math.pow(1.0 - brightness, 2) * 1.5) *
+          Math.max(0, fadeOutFactor); // Apply the fade multiplier here
+
       const wobble = 1.0 + THREE.MathUtils.randFloatSpread(0.5 * chaosLevel);
 
       // 3. Update Object

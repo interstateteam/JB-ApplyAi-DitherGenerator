@@ -89,6 +89,7 @@ export const initThree = (canvasId) => {
   });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x000000, 0);
+  renderer.setClearAlpha(0);
 
   // Controls Setup (Pan/zoom/rotate with smooth damping)
   controls = new OrbitControls(camera, renderer.domElement);
@@ -105,10 +106,10 @@ export const initThree = (canvasId) => {
 
   // Material Setup (Single material shared across all instanced dots)
   material = new THREE.MeshBasicMaterial({});
-  material.color.setRGB(0.0, 0.0, 0.0);
+  material.color.set("#222222");
 
   // Post Processing Setup
-  const composer = createPostProcessor(renderer, scene, camera);
+  // const composer = createPostProcessor(renderer, scene, camera);
 
   // Animation Loop
   const animate = () => {

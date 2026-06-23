@@ -5,6 +5,9 @@ import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import polygonClipping from "polygon-clipping";
 
+const targetWidth = 2560;
+const targetHeight = 1440;
+
 const ffmpeg = new FFmpeg();
 
 // --- Export 3D Shape Logic ---
@@ -58,6 +61,56 @@ export async function export3D(scene) {
 
 // --- Export Image Logic ---
 
+function setupExportResolution(
+  renderer,
+  activeCamera,
+  targetWidth,
+  targetHeight,
+) {
+  const originalState = {
+    size: new THREE.Vector2(),
+    aspect: activeCamera.aspect,
+    left: activeCamera.left,
+    right: activeCamera.right,
+  };
+
+  renderer.getSize(originalState.size);
+
+  // Apply target resolutions
+  renderer.setSize(targetWidth, targetHeight, false);
+  if (composer) composer.setSize(targetWidth, targetHeight);
+
+  // Update camera projection (with Perspective & Orthographic support)
+  const targetAspect = targetWidth / targetHeight;
+  if (activeCamera.isPerspectiveCamera) {
+    activeCamera.aspect = targetAspect;
+  } else if (activeCamera.isOrthographicCamera) {
+    const frustumHeight = activeCamera.top - activeCamera.bottom;
+    activeCamera.left = -(frustumHeight * targetAspect) / 2;
+    activeCamera.right = (frustumHeight * targetAspect) / 2;
+  }
+  activeCamera.updateProjectionMatrix();
+
+  return originalState;
+}
+
+function restoreOriginalResolution(renderer, activeCamera, originalState) {
+  // Restore renderer size
+  renderer.setSize(originalState.size.x, originalState.size.y, false);
+  if (composer) composer.setSize(originalState.size.x, originalState.size.y);
+
+  // Restore camera state
+  if (activeCamera.isPerspectiveCamera) {
+    activeCamera.aspect = originalState.aspect;
+  } else if (activeCamera.isOrthographicCamera) {
+    activeCamera.left = originalState.left;
+    activeCamera.right = originalState.right;
+  }
+  activeCamera.updateProjectionMatrix();
+}
+
+// --- Export Image Logic ---
+
 export function exportToJPG(scene, renderer, camera) {
   if (!scene || !renderer || !camera) {
     console.error(
@@ -66,30 +119,39 @@ export function exportToJPG(scene, renderer, camera) {
     return null;
   }
 
+  let activeCamera = camera;
+  scene.traverse((object) => {
+    if (object.isCamera) activeCamera = object;
+  });
+
+  // 1. SETUP: Call the helper to resize and get the original state
+  const originalState = setupExportResolution(
+    renderer,
+    activeCamera,
+    targetWidth,
+    targetHeight,
+  );
+
+  // 2. FORMAT SPECIFIC LOGIC: Handle JPG solid backgrounds
   const canvasContainer = renderer.domElement.parentElement;
   const currentBgColor = canvasContainer
     ? window.getComputedStyle(canvasContainer).backgroundColor
     : "0xf43b00";
 
   const originalBackground = scene.background;
-
   scene.background = new THREE.Color(currentBgColor);
-
-  scene.traverse((object) => {
-    if (object.isCamera) {
-      camera = object;
-    }
-  });
 
   if (composer) {
     composer.render();
   } else {
-    renderer.render(scene, camera);
+    renderer.render(scene, activeCamera);
   }
 
   const dataURL = renderer.domElement.toDataURL("image/jpeg", 1.0);
 
+  // 3. TEARDOWN: Restore background and call the helper to restore sizing
   scene.background = originalBackground;
+  restoreOriginalResolution(renderer, activeCamera, originalState);
 
   return dataURL;
 }
@@ -102,19 +164,43 @@ export function exportToPNG(scene, renderer, camera) {
     return null;
   }
 
+  let activeCamera = camera;
   scene.traverse((object) => {
-    if (object.isCamera) {
-      camera = object;
-    }
+    if (object.isCamera) activeCamera = object;
   });
 
+  // 1. SETUP: Call the helper to resize and get the original state
+  const originalState = setupExportResolution(
+    renderer,
+    activeCamera,
+    targetWidth,
+    targetHeight,
+  );
+
+  // 2. FORMAT SPECIFIC LOGIC: Handle PNG transparency & alpha buffers
+  const originalBackground = scene.background;
+  const originalClearAlpha = renderer.getClearAlpha();
+
+  scene.background = null;
+  renderer.setClearAlpha(0);
+
   if (composer) {
+    if (composer.readBuffer)
+      composer.readBuffer.texture.format = THREE.RGBAFormat;
+    if (composer.writeBuffer)
+      composer.writeBuffer.texture.format = THREE.RGBAFormat;
     composer.render();
   } else {
-    renderer.render(scene, camera);
+    renderer.render(scene, activeCamera);
   }
 
   const dataURL = renderer.domElement.toDataURL("image/png");
+
+  // 3. TEARDOWN: Restore background/alpha and call the helper to restore sizing
+  scene.background = originalBackground;
+  renderer.setClearAlpha(originalClearAlpha);
+  restoreOriginalResolution(renderer, activeCamera, originalState);
+
   return dataURL;
 }
 
@@ -322,58 +408,159 @@ export function convertToSVG(scene, camera) {
 }
 
 // --- Export Video Logic ---
-export function exportWEBM(renderer, durationInSeconds = 5) {
+// Change the bgColor default to null
+export function exportWEBM(
+  renderer,
+  scene,
+  camera,
+  durationInSeconds = 5,
+  bgColor = null, // 👈 Defaults to null (transparent)
+  onStartRecord,
+) {
   return new Promise((resolve, reject) => {
-    if (!renderer) {
-      console.error("Renderer is required to capture video.");
-      reject("Renderer missing");
+    if (!renderer || !scene || !camera) {
+      reject("Fundamental dependencies missing");
       return;
+    }
+
+    let activeCamera = camera;
+    scene.traverse((object) => {
+      if (object.isCamera) activeCamera = object;
+    });
+
+    const originalSize = new THREE.Vector2();
+    renderer.getSize(originalSize);
+    const originalAspect = activeCamera.aspect;
+    const originalBackground = scene.background;
+    const originalClearAlpha = renderer.getClearAlpha();
+
+    // 👈 CONDITIONAL BACKGROUND: Solid for MP4, transparent for MOV/WebM
+    if (bgColor) {
+      scene.background = new THREE.Color(bgColor);
+      renderer.setClearAlpha(1);
+    } else {
+      scene.background = null;
+      renderer.setClearAlpha(0);
+    }
+
+    renderer.setSize(targetWidth, targetHeight, false);
+    if (composer) composer.setSize(targetWidth, targetHeight);
+    activeCamera.aspect = targetWidth / targetHeight;
+    activeCamera.updateProjectionMatrix();
+
+    if (typeof onStartRecord === "function") onStartRecord();
+
+    if (composer) {
+      composer.render();
+    } else {
+      renderer.render(scene, activeCamera);
     }
 
     const canvas = renderer.domElement;
     const stream = canvas.captureStream(30);
 
+    // Dynamic encoder settings based on transparency needs
     const options = {
       mimeType: "video/webm; codecs=vp9",
-      videoBitsPerSecond: 2500000,
-      alphaBits: 8,
+      videoBitsPerSecond: 80000000, // Keeping your high-quality bitrate!
     };
 
-    let mediaRecorder;
+    // 👈 Re-enable alpha channel allocations ONLY if we are transparent
+    if (!bgColor) {
+      options.alphaBits = 8;
+    }
 
+    let mediaRecorder;
     try {
       mediaRecorder = new MediaRecorder(stream, options);
     } catch (e) {
-      console.warn(
-        "VP9 with transparent alphaBits not supported on this browser, falling back to default webm.",
-      );
       mediaRecorder = new MediaRecorder(stream);
     }
 
     const chunks = [];
-
     mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) {
-        chunks.push(e.data);
-      }
+      if (e.data && e.data.size > 0) chunks.push(e.data);
     };
 
     mediaRecorder.onstop = () => {
-      // NOW that the recorder has stopped, we know the recording is safe
       stream.getTracks().forEach((track) => track.stop());
+
+      renderer.setSize(originalSize.x, originalSize.y, false);
+      if (composer) composer.setSize(originalSize.x, originalSize.y);
+      activeCamera.aspect = originalAspect;
+      activeCamera.updateProjectionMatrix();
+      scene.background = originalBackground;
+      renderer.setClearAlpha(originalClearAlpha);
+
       const blob = new Blob(chunks, { type: "video/webm" });
       resolve(blob);
     };
 
     mediaRecorder.start();
 
-    // Just stop the recorder here
-    setTimeout(() => {
-      mediaRecorder.stop();
-    }, durationInSeconds * 1000);
+    if (typeof durationInSeconds === "number") {
+      setTimeout(() => {
+        mediaRecorder.stop();
+      }, durationInSeconds * 1000);
+    } else {
+      const monitorLoop = () => {
+        if (window.isAnimationLoopComplete) {
+          setTimeout(() => {
+            mediaRecorder.stop();
+          }, 500);
+        } else {
+          requestAnimationFrame(monitorLoop);
+        }
+      };
+      setTimeout(() => {
+        requestAnimationFrame(monitorLoop);
+      }, 200);
+    }
   });
 }
 
+export async function convertToMP4(webmBlob) {
+  if (!webmBlob) {
+    throw new Error("webmBlob parameter is required for conversion.");
+  }
+
+  console.log("Starting direct high-speed MP4 conversion...");
+
+  try {
+    if (!ffmpeg.loaded) {
+      await ffmpeg.load();
+    }
+
+    await cleanupTempFiles(["input.webm", "output.mp4"]);
+    await ffmpeg.writeFile("input.webm", await fetchFile(webmBlob));
+
+    // Clean, direct, high-speed layout conversion stream
+    await ffmpeg.exec([
+      "-i",
+      "input.webm",
+      "-c:v",
+      "libx264",
+      "-tune",
+      "animation",
+      "-pix_fmt",
+      "yuv420p",
+      "-crf",
+      "14",
+      "output.mp4",
+    ]);
+
+    const mp4Data = await ffmpeg.readFile("output.mp4");
+    await cleanupTempFiles(["input.webm", "output.mp4"]);
+
+    return URL.createObjectURL(
+      new Blob([mp4Data.buffer], { type: "video/mp4" }),
+    );
+  } catch (err) {
+    console.error("In-browser MP4 conversion pipeline failed: ", err);
+    await cleanupTempFiles(["input.webm", "output.mp4"]);
+    throw err;
+  }
+}
 export async function convertToMOV(webmBlob) {
   if (!webmBlob) {
     throw new Error("webmBlob parameter is required for conversion.");
@@ -413,10 +600,6 @@ export async function convertToMOV(webmBlob) {
     console.error("In-browser MOV conversion pipeline failed: ", err);
     throw err;
   }
-}
-
-export async function convertToMP4(webmBlob) {
-  return;
 }
 
 export async function cleanupTempFiles(

@@ -37,19 +37,22 @@ export const updateButtonUI = () => {
 // --- State Manager ---
 export const getAnimationState = () => ({ activeType, isPaused });
 
-export const handleAnimationSwitch = (requestedType) => {
-  if (activeType === requestedType) {
+export const handleAnimationSwitch = (requestedType, forcePlay = false) => {
+  if (activeType === requestedType && !forcePlay) {
     isPaused = !isPaused;
   } else {
     activeType = requestedType;
     isPaused = false;
-    time = 0; // Force the new animation to start from the beginning
+    time = 0; // Force the animation timeline back to frame 1
   }
 
   updateButtonUI();
 };
 
-// --- Camera Animation Engine ---
+export const resetAnimationTimeline = () => {
+  time = 0;
+};
+
 export const updateCameraAnimation = (controls) => {
   if (isPaused) {
     controls.autoRotate = false;
@@ -60,42 +63,128 @@ export const updateCameraAnimation = (controls) => {
     case "eased":
       controls.autoRotate = false;
 
-      // 1. Time progression
-      const timeIncrement = 0.05; // Controls how fast the loop finishes
-      time += timeIncrement;
-
-      // 2. Map time to a clean 0.0 to 1.0 progress cycle
+      const timeIncrement = 0.05;
       const loopDuration = Math.PI * 2;
-      const progress = (time % loopDuration) / loopDuration;
+      let progress;
 
-      // 3. The "Extreme Snap" Math (Derivative of Quintic Ease)
-      // This equation forces velocity to be nearly zero at the edges and spike massively at 0.5
-      const velocityCurve =
-        progress < 0.5
-          ? 80 * Math.pow(progress, 4)
-          : 5 * Math.pow(2 - 2 * progress, 4);
+      if (window.isExportingLoop) {
+        // --- AUTOMATED BACKGROUND EXPORT MODE ---
+        // Initialize an absolute accumulator just for the export tracking session
+        if (window.exportRotatedAccumulator === undefined) {
+          window.exportRotatedAccumulator = 0;
+        }
 
-      // 4. Exact Spin Control
-      const spinsPerLoop = 1;
-      const totalDegrees = 360 * spinsPerLoop;
+        if (!window.isAnimationLoopComplete) {
+          time += timeIncrement;
+          progress = time / loopDuration;
 
-      // Calculate exactly how many degrees to turn THIS frame based on the curve's current slope
-      const degreesThisFrame =
-        velocityCurve * (timeIncrement / loopDuration) * totalDegrees;
+          if (progress >= 1.0) {
+            progress = 1.0;
+            window.isAnimationLoopComplete = true;
+          }
+        } else {
+          progress = 1.0;
+        }
 
-      // Apply rotation
-      controls.rotateLeft(THREE.MathUtils.degToRad(degreesThisFrame));
+        // 1. Calculate absolute progress using a smooth Quintic Ease-In-Out curve
+        const easedProgress =
+          progress < 0.5
+            ? 16 * Math.pow(progress, 5)
+            : 1 - Math.pow(-2 * progress + 2, 5) / 2;
+
+        // 2. Determine exactly where the camera SHOULD be in total radians (Max = 2*PI)
+        const targetTotalRotation = easedProgress * Math.PI * 2;
+
+        // 3. Rotate ONLY the difference between the target position and where we are
+        const deltaToRotate =
+          targetTotalRotation - window.exportRotatedAccumulator;
+        window.exportRotatedAccumulator = targetTotalRotation;
+
+        controls.rotateLeft(deltaToRotate);
+      } else {
+        // --- NORMAL INTERACTIVE VIEWPORT MODE ---
+        time += timeIncrement;
+        progress = (time % loopDuration) / loopDuration;
+
+        const velocityCurve =
+          progress < 0.5
+            ? 80 * Math.pow(progress, 4)
+            : 5 * Math.pow(2 - 2 * progress, 4);
+
+        const totalDegrees = 360;
+        const degreesThisFrame =
+          velocityCurve * (timeIncrement / loopDuration) * totalDegrees;
+
+        controls.rotateLeft(THREE.MathUtils.degToRad(degreesThisFrame));
+      }
       break;
 
     case "thirdMode":
       controls.autoRotate = false;
-      controls.rotateLeft(THREE.MathUtils.degToRad(1.0)); // Placeholder
+
+      if (window.isExportingLoop) {
+        if (window.exportRotatedAccumulator === undefined) {
+          window.exportRotatedAccumulator = 0;
+        }
+
+        if (!window.isAnimationLoopComplete) {
+          time += 1;
+          let progress = time / 360; // 360 frames total
+
+          if (progress >= 1.0) {
+            progress = 1.0;
+            window.isAnimationLoopComplete = true;
+          }
+
+          const targetTotalRotation = progress * Math.PI * 2;
+          const deltaToRotate =
+            targetTotalRotation - window.exportRotatedAccumulator;
+          window.exportRotatedAccumulator = targetTotalRotation;
+
+          controls.rotateLeft(deltaToRotate);
+        }
+      } else {
+        time += 1;
+        controls.rotateLeft(THREE.MathUtils.degToRad(1.0));
+      }
       break;
 
     case "default":
     default:
-      controls.autoRotate = true;
-      controls.autoRotateSpeed = 5.0;
+      if (window.isExportingLoop) {
+        // --- AUTOMATED BACKGROUND EXPORT MODE ---
+        controls.autoRotate = false;
+
+        if (window.exportRotatedAccumulator === undefined) {
+          window.exportRotatedAccumulator = 0;
+        }
+
+        if (!window.isAnimationLoopComplete) {
+          const defaultIncrement = 0.01;
+          time += defaultIncrement;
+          const defaultLoopDuration = Math.PI * 2;
+
+          let progress = time / defaultLoopDuration;
+
+          if (progress >= 1.0) {
+            progress = 1.0;
+            window.isAnimationLoopComplete = true;
+          }
+
+          const targetTotalRotation = progress * Math.PI * 2;
+          const deltaToRotate =
+            targetTotalRotation - window.exportRotatedAccumulator;
+          window.exportRotatedAccumulator = targetTotalRotation;
+
+          controls.rotateLeft(deltaToRotate);
+        } else {
+          controls.autoRotate = false;
+        }
+      } else {
+        // --- NORMAL INTERACTIVE VIEWPORT MODE ---
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 5.0;
+      }
       break;
   }
 };
@@ -104,3 +193,36 @@ export const forcePauseAnimation = () => {
   isPaused = true;
   updateButtonUI(); // Ensures the active button turns to the "paused" color
 };
+
+export function loadImageAnimation() {
+  const imgCanvas = document.getElementById("imgLoadCanvas");
+  const imgCTX = imgCanvas.getContext("2d");
+
+  const img = new Image();
+  img.onload = () => {
+    // 1. Set the canvas to fill the window
+    imgCanvas.width = window.innerWidth;
+    imgCanvas.height = window.innerHeight;
+
+    const imgAspect = img.width / img.height;
+    const windowAspect = window.innerWidth / window.innerHeight;
+
+    const scaleValue = 0.8;
+    let scaledWidth, scaledHeight;
+
+    if (windowAspect > imgAspect) {
+      scaledHeight = window.innerHeight * scaleValue;
+      scaledWidth = scaledHeight * imgAspect;
+    } else {
+      scaledWidth = window.innerWidth * scaleValue;
+      scaledHeight = scaledWidth / imgAspect;
+    }
+
+    const x = (imgCanvas.width - scaledWidth) / 2;
+    const y = (imgCanvas.height - scaledHeight) / 2;
+
+    imgCTX.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
+    imgCTX.drawImage(img, x, y, scaledWidth, scaledHeight);
+  };
+  img.src = "src/assets/defaultImageTransparent.png";
+}
