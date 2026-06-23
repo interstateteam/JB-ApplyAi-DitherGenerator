@@ -4,45 +4,45 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>DitherFile</title>
-      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-CbZ59VBm.js"></script>
-      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-CbeY2kr7.css">
+      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-Clh1JcOW.js"></script>
+      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-Dg4Y64Xv.css">
     </head>
     <body class="bg-ApplyDark">
         <!-- Canvas for the 3D Space -->
-        <div class="relative w-[70vw] 2xl:w-[80vw] h-screen overflow-clip">
+        <div class="z-2 relative w-[70vw] 2xl:w-[80vw] h-screen overflow-clip">
             <!-- ESSENTIAL: 3D Canvas -->
             <div
-                class="absolute inset-[0.4vw] flex justify-center items-center bg-ApplyOrange rounded-2xl overflow-clip"
+                class="cus-bgColour absolute inset-[0.4vw] flex justify-center items-center bg-ApplyOrange rounded-2xl overflow-clip"
             >
                 <canvas id="canvas"></canvas>
                 <canvas
-                    class="opacity-0 absolute w-[68.2vw] 2xl:w-[78.2vw] h-full inset-[0.4vw] outline-1 outline-amber-200 pointer-events-none"
+                    class="opacity-0 absolute w-[68.2vw] 2xl:w-[78.2vw] h-full inset-[0.4vw] pointer-events-none"
                     id="imgLoadCanvas"
                 ></canvas>
             </div>
-
-            <!-- OPTIONAL: Page Decoration -->
-            <img
-                class="absolute -top-20 -left-20 w-32 z-20 rotate-225 -scale-y-100"
-                src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
-            />
-            <img
-                class="absolute -bottom-20 -left-20 w-32 z-20 rotate-135"
-                src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
-            />
-            <img
-                class="absolute -right-20 -top-20 w-32 z-20 rotate-315"
-                src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
-            />
-            <img
-                class="absolute -right-20 -bottom-20 w-32 z-20 rotate-45 -scale-y-100"
-                src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
-            />
         </div>
+
+        <!-- OPTIONAL: Page Decoration -->
+        <img
+            class="cus-pageDeco absolute -top-20 -left-20 w-32 z-1 rotate-225 -scale-y-100"
+            src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
+        />
+        <img
+            class="cus-pageDeco absolute -bottom-20 -left-20 w-32 z-1 rotate-135"
+            src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
+        />
+        <img
+            class="cus-pageDeco absolute -right-20 -top-20 w-32 z-1 rotate-315"
+            src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
+        />
+        <img
+            class="cus-pageDeco absolute -right-20 -bottom-20 w-32 z-1 rotate-45 -scale-y-100"
+            src="data:image/svg+xml,%3c?xml%20version='1.0'%20encoding='UTF-8'?%3e%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20version='1.1'%20viewBox='0%200%2050.58%2078.89'%3e%3c!--%20Generator:%20Adobe%20Illustrator%2030.4.0,%20SVG%20Export%20Plug-In%20.%20SVG%20Version:%202.1.4%20Build%20226)%20--%3e%3cdefs%3e%3cstyle%3e%20.st0%20{%20fill:%20%235a0513;%20}%20%3c/style%3e%3c/defs%3e%3cpath%20class='st0'%20d='M42.09,1.23c1.15-.58,2.53.2,2.61,1.48.17,2.5,3.57,12.47,4.92,14.51.73,1.11.06,2.61-1.26,2.79l-34.71,5.43c-3.16.43-4.46,4.29-2.2,6.54l31.29,31.19c.87.87.65,2.33-.45,2.89-2.37,1.22-6.09,3.22-8.31,4.85-2.22,1.62-5.22,4.53-7.1,6.42-.88.88-2.37.63-2.91-.49L1.44,30.57h0c-1.85-3.79-.31-8.36,3.47-10.25L42.09,1.23Z'/%3e%3c/svg%3e"
+        />
 
         <!-- Control Box -->
         <div
-            class="absolute right-[0.4vw] top-[0.4vw] bottom-[0.4vw] w-[29.6vw] 2xl:w-[19.6vw] ml-[0.4vw] bg-ApplyWhite rounded-2xl overflow-hidden shadow-sm"
+            class="z-2 absolute right-[0.4vw] top-[0.4vw] bottom-[0.4vw] w-[29.6vw] 2xl:w-[19.6vw] ml-[0.4vw] bg-ApplyWhite rounded-2xl overflow-hidden shadow-sm"
         >
             <div
                 class="slider-container w-full h-full flex flex-col p-8 text-xs gap-[2vh] font-AlbraLight overflow-y-auto scrollbar-none"
@@ -84,7 +84,7 @@
                         ></i>
 
                         <select
-                            id="backgroundColour"
+                            id="modeSelection"
                             class="appearance-none w-full h-full text-center bg-transparent cursor-pointer font-AlbraSans text-sm select-none outline-none pl-12 pr-4 leading-10.5 transition-all duration-100 ease-out hover:text-ApplyOrange hover:scale-105"
                         >
                             <option value="" disabled selected hidden>
@@ -92,7 +92,7 @@
                             </option>
 
                             <option value="3DMode">3D Mode</option>
-                            <option value="Pattern Generator">
+                            <option value="Pattern Generator (OFFLINE)">
                                 Pattern Generator
                             </option>
                         </select>
@@ -311,19 +311,24 @@
                         ></i>
 
                         <select
-                            id="backgroundColour"
+                            id="cus-bgChoice"
                             class="appearance-none w-full h-full text-center bg-transparent cursor-pointer font-AlbraSans text-sm select-none outline-none pl-12 pr-4 leading-10.5 transition-all duration-100 ease-out hover:text-ApplyOrange hover:scale-105"
                         >
-                            <option value="" disabled selected hidden>
+                            <option
+                                value="ColourOrange"
+                                disabled
+                                selected
+                                hidden
+                            >
                                 Backdrop
                             </option>
 
-                            <option value="icosahedron">
+                            <option value="ColourOrange">
                                 Orange (Default)
                             </option>
-                            <option value="box">Black</option>
-                            <option value="sphere">White</option>
-                            <option value="torus">Maroon</option>
+                            <option value="ColourBlack">Black</option>
+                            <option value="ColourWhite">White</option>
+                            <option value="ColourMaroon">Maroon</option>
                         </select>
                     </div>
                 </div>
