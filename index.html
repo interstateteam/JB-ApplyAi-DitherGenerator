@@ -4,8 +4,8 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>DitherFile</title>
-      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-BEUSZDUD.js"></script>
-      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-av_Rw3q8.css">
+      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-Dc0gbarR.js"></script>
+      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-aEbz3sef.css">
     </head>
     <body class="bg-ApplyDark">
         <!-- Canvas for the 3D Space -->
@@ -91,9 +91,9 @@
                                 Mode Selection
                             </option>
 
-                            <option value="3DMode">3D Mode</option>
-                            <option value="Pattern Generator (OFFLINE)">
-                                Pattern Generator
+                            <option value="3DMode">3D Mode (Default)</option>
+                            <option value="PatternGenerator ">
+                                Pattern Generator (OFFLINE)
                             </option>
                         </select>
                     </div>
@@ -139,7 +139,7 @@
                         class="group w-20 place-items-center place-content-center cursor-pointer"
                     >
                         <i
-                            data-lucide="volleyball"
+                            data-lucide="zoom-in"
                             class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
                         ></i>
                     </div>
@@ -151,11 +151,9 @@
                         for="pixelAmount"
                         class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
                     >
-                        <span class="font-AlbraLight text-lg"
-                            >Pixel Amount</span
-                        >
+                        <span class="font-AlbraLight text-lg">Dot Amount</span>
                         <span class="font-AlbraMedium"
-                            >The amount of Pixels in the object</span
+                            >The amount of dots in the object</span
                         >
                     </label>
                     <input
@@ -163,7 +161,7 @@
                         id="pixelAmount"
                         min="0"
                         max="100"
-                        value="50"
+                        value="100"
                         step="1"
                         class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                     />
@@ -173,9 +171,9 @@
                         for="pixelScale"
                         class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
                     >
-                        <span class="font-AlbraLight text-xl">Pixel Scale</span>
+                        <span class="font-AlbraLight text-xl">Dot Scale</span>
                         <span class="font-AlbraMedium"
-                            >The size for the individual pixels</span
+                            >The size for the individual dots</span
                         >
                     </label>
                     <input
@@ -183,12 +181,12 @@
                         id="pixelScale"
                         min="0"
                         max="100"
-                        value="50"
+                        value="10"
                         step="1"
                         class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                     />
                 </div>
-                <div class="flex flex-col gap-4">
+                <!--<div class="flex flex-col gap-4">
                     <label
                         for="gridScale"
                         class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
@@ -207,7 +205,7 @@
                         step="1"
                         class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                     />
-                </div>
+                </div>-->
 
                 <!-- Reenable to turn on the slider for pixel distortion-->
                 <!--<div class="flex flex-col gap-4">
@@ -231,7 +229,7 @@
                 />
             </div>-->
 
-                <div class="flex flex-col gap-4">
+                <!--<div class="flex flex-col gap-4">
                     <label
                         for="clipDepth"
                         class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
@@ -250,7 +248,31 @@
                         step="1"
                         class="appearance-none cursor-pointer accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                     />
+                </div>-->
+
+                <div class="flex flex-col gap-4">
+                    <label
+                        for="scaleRatio"
+                        class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                    >
+                        <span class="font-AlbraLight text-xl"
+                            >Dot Difference</span
+                        >
+                        <span class="font-AlbraMedium"
+                            >Size of biggest vs smallest dot</span
+                        >
+                    </label>
+                    <input
+                        type="range"
+                        id="scaleRatio"
+                        min="0"
+                        max="100"
+                        value="20"
+                        step="1"
+                        class="appearance-none cursor-pointer accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                    />
                 </div>
+
                 <div class="flex flex-col gap-4">
                     <label
                         for="pixelGravity"
@@ -260,7 +282,7 @@
                             >Gravitational Pull</span
                         >
                         <span class="font-AlbraMedium">
-                            Gravitational pull on the particles</span
+                            Gravitational pull on the dots</span
                         >
                     </label>
                     <input
@@ -268,7 +290,7 @@
                         id="pixelGravity"
                         min="0"
                         max="100"
-                        value="0"
+                        value="100"
                         step="1"
                         class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                     />
