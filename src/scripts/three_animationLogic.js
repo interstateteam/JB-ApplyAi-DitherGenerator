@@ -50,8 +50,12 @@ export const handleAnimationSwitch = (requestedType, forcePlay = false) => {
   updateButtonUI();
 };
 
-export const resetAnimationTimeline = () => {
+export const resetAnimationTimeline = (controls) => {
   time = 0;
+
+  if (controls) {
+    updateCameraAnimation(controls);
+  }
 };
 
 export const updateCameraAnimation = (controls) => {
@@ -60,25 +64,29 @@ export const updateCameraAnimation = (controls) => {
     return;
   }
 
-  switch (activeType) {
-    case "eased":
-      controls.autoRotate = false;
+  // Helper to grab the mesh and check if we are transitioning
+  let targetMesh = null;
+  if (scene) {
+    scene.traverse((child) => {
+      if (child.isInstancedMesh) targetMesh = child;
+    });
+  }
+  const isTransitioning = targetMesh && targetMesh.userData.isTransitioning;
 
+  switch (activeType) {
+    case "eased": {
+      controls.autoRotate = false;
       const timeIncrement = 0.05;
       const loopDuration = Math.PI * 2;
       let progress;
 
       if (window.isExportingLoop) {
-        // --- AUTOMATED BACKGROUND EXPORT MODE ---
-        // Initialize an absolute accumulator just for the export tracking session
-        if (window.exportRotatedAccumulator === undefined) {
+        // ... (Exporting logic remains untouched) ...
+        if (window.exportRotatedAccumulator === undefined)
           window.exportRotatedAccumulator = 0;
-        }
-
         if (!window.isAnimationLoopComplete) {
           time += timeIncrement;
           progress = time / loopDuration;
-
           if (progress >= 1.0) {
             progress = 1.0;
             window.isAnimationLoopComplete = true;
@@ -87,185 +95,297 @@ export const updateCameraAnimation = (controls) => {
           progress = 1.0;
         }
 
-        // 1. Calculate absolute progress using a smooth Quintic Ease-In-Out curve
         const easedProgress =
           progress < 0.5
             ? 16 * Math.pow(progress, 5)
             : 1 - Math.pow(-2 * progress + 2, 5) / 2;
-
-        // 2. Determine exactly where the camera SHOULD be in total radians (Max = 2*PI)
         const targetTotalRotation = easedProgress * Math.PI * 2;
-
-        // 3. Rotate ONLY the difference between the target position and where we are
         const deltaToRotate =
           targetTotalRotation - window.exportRotatedAccumulator;
         window.exportRotatedAccumulator = targetTotalRotation;
-
         controls.rotateLeft(deltaToRotate);
       } else {
-        // --- NORMAL INTERACTIVE VIEWPORT MODE ---
         time += timeIncrement;
-        progress = (time % loopDuration) / loopDuration;
+        // If transitioning, lock progress at 1.0. Otherwise, loop endlessly.
+        progress = isTransitioning
+          ? Math.min(time / loopDuration, 1.0)
+          : (time % loopDuration) / loopDuration;
 
         const velocityCurve =
           progress < 0.5
             ? 80 * Math.pow(progress, 4)
             : 5 * Math.pow(2 - 2 * progress, 4);
-
         const totalDegrees = 360;
         const degreesThisFrame =
           velocityCurve * (timeIncrement / loopDuration) * totalDegrees;
-
         controls.rotateLeft(THREE.MathUtils.degToRad(degreesThisFrame));
       }
-      break;
 
-    case "breakApart":
-      controls.autoRotate = false;
+      // --- DUAL-BUFFER MORPHING FOR EASED SPIN ---
+      if (isTransitioning && targetMesh) {
+        const data = targetMesh.userData;
 
-      if (window.isExportingLoop) {
-        if (window.exportRotatedAccumulator === undefined) {
-          window.exportRotatedAccumulator = 0;
+        if (
+          !data.prevPositions ||
+          !data.originalPositions ||
+          !data.prevRotations ||
+          !data.originalRotations
+        ) {
+          return;
         }
-        if (!window.isAnimationLoopComplete) {
-          time += 1;
-          if (time / 360 >= 1.0) {
-            window.isAnimationLoopComplete = true;
-          }
-        }
-      } else {
-        time += 1;
-      }
-
-      // Securely fetch our generated InstancedMesh object from the scene graph
-      let targetMesh = null;
-      if (scene) {
-        scene.traverse((child) => {
-          if (child.isInstancedMesh) {
-            targetMesh = child;
-          }
-        });
-      }
-
-      if (targetMesh && targetMesh.userData.originalPositions) {
-        const currentFrame = time % 360;
-
-        // Continuous timeline progress factor (goes from 0.0 to 1.0 flawlessly)
-        const t = currentFrame / 360;
-
-        // 1. EXPONENTIAL MORPH FACTOR: Pure continuous wave mapping (0 -> 1 -> 0)
-        // The power exponent (3.5) gives it that slow takeoff and explosive mid-flight surge.
-        const baseMorph = (1 - Math.cos(t * Math.PI * 2)) / 2;
-        const morphFactor = Math.pow(baseMorph, 3.5);
-
-        // 2. CONTINUOUS SPIN ANGLE: Seamlessly runs forward over the loop boundaries
-        // Total rotation is Math.PI * 8 (4 full spins total: 2 spins out, 2 spins back).
-        // The subtracted sine wave acts as our exponential ease, matching the morph speed.
-        const totalSpins = Math.PI * 8;
-        const spinAngle = t * totalSpins - Math.sin(t * Math.PI * 4) * 1.35;
 
         const blendedPos = new THREE.Vector3();
         const blendedRot = new THREE.Quaternion();
         const blendedScaleVec = new THREE.Vector3();
         const transformMatrix = new THREE.Matrix4();
 
-        const rotationAxis = new THREE.Vector3(0, 1, 0);
-        const globalSpinQuat = new THREE.Quaternion().setFromAxisAngle(
-          rotationAxis,
-          spinAngle,
-        );
+        // S-Curve morph so the dots snap into place elegantly during the spin
+        const morphProgress =
+          progress < 0.5
+            ? 16 * Math.pow(progress, 5)
+            : 1 - Math.pow(-2 * progress + 2, 5) / 2;
 
-        const data = targetMesh.userData;
-
-        // Perform optimized coordinate interpolation loop across every pixel instance
         for (let i = 0; i < targetMesh.count; i++) {
-          // Interpolate position states with the perfectly smooth curve
+          let posA = data.prevPositions[i] || data.originalPositions[i];
+          let scaleA =
+            data.prevScales[i] !== undefined ? data.prevScales[i] : 0;
+          let rotA = data.prevRotations[i] || data.originalRotations[i];
+
           blendedPos.lerpVectors(
+            posA,
             data.originalPositions[i],
-            data.gridPositions[i],
-            morphFactor,
+            morphProgress,
+          );
+          blendedRot.slerpQuaternions(
+            rotA,
+            data.originalRotations[i],
+            morphProgress,
+          );
+          let currentScale = THREE.MathUtils.lerp(
+            scaleA,
+            data.originalScales[i],
+            morphProgress,
           );
 
-          // Deterministic Grid Randomness - Significantly boosted on X and Y axes (340)
-          const noiseX =
-            (Math.sin(i * 0.13) * 0.6 + Math.cos(i * 0.45) * 0.4) * 340;
-          const noiseY =
-            (Math.sin(i * 0.27) * 0.5 + Math.cos(i * 0.19) * 0.5) * 340;
-          const noiseZ =
-            (Math.sin(i * 0.51) * 0.7 + Math.cos(i * 0.33) * 0.3) * 40;
+          blendedScaleVec.set(currentScale, currentScale, currentScale);
+          transformMatrix.compose(blendedPos, blendedRot, blendedScaleVec);
+          targetMesh.setMatrixAt(i, transformMatrix);
+        }
+        targetMesh.instanceMatrix.needsUpdate = true;
 
-          blendedPos.x += noiseX * morphFactor;
-          blendedPos.y += noiseY * morphFactor;
-          blendedPos.z += noiseZ * morphFactor;
+        if (progress >= 1.0)
+          window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
+      }
+      break;
+    }
 
-          // Apply continuous unified single-direction rotation translations around center
-          blendedPos.applyAxisAngle(rotationAxis, spinAngle);
+    case "breakApart": {
+      controls.autoRotate = false;
 
-          // Interpolate chaotic individual dot angles to clean uniform grid slots
+      // Dynamically select timings based on whether we are looping or transitioning!
+      const pauseNormalFrames = 60;
+      const explodeFrames = isTransitioning ? 210 : 390;
+      const pauseExpandedFrames = 30;
+      const implodeFrames = isTransitioning ? 300 : 120;
+      const loopDuration =
+        pauseNormalFrames + explodeFrames + pauseExpandedFrames + implodeFrames;
+
+      if (window.isExportingLoop) {
+        if (window.exportRotatedAccumulator === undefined)
+          window.exportRotatedAccumulator = 0;
+        if (!window.isAnimationLoopComplete) {
+          time += 1;
+          if (time >= loopDuration) window.isAnimationLoopComplete = true;
+        }
+      } else {
+        time += 1;
+      }
+
+      if (targetMesh && targetMesh.userData.originalPositions) {
+        const currentFrame = time % loopDuration;
+        let morphFactor = 0;
+        let isSecondHalf = false;
+
+        const easeOutQuint = (x) => 1 - Math.pow(1 - x, 5);
+        const easeInOutCubic = (x) =>
+          x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+
+        if (currentFrame < pauseNormalFrames) {
+          morphFactor = 0;
+        } else if (currentFrame < pauseNormalFrames + explodeFrames) {
+          const t = (currentFrame - pauseNormalFrames) / explodeFrames;
+          morphFactor = easeOutQuint(t);
+        } else if (
+          currentFrame <
+          pauseNormalFrames + explodeFrames + pauseExpandedFrames
+        ) {
+          morphFactor = 1.0;
+          isSecondHalf = true;
+        } else {
+          const t =
+            (currentFrame -
+              (pauseNormalFrames + explodeFrames + pauseExpandedFrames)) /
+            implodeFrames;
+          morphFactor = 1.0 - easeInOutCubic(t);
+          isSecondHalf = true;
+        }
+
+        const blendedPos = new THREE.Vector3();
+        const blendedRot = new THREE.Quaternion();
+        const blendedScaleVec = new THREE.Vector3();
+        const transformMatrix = new THREE.Matrix4();
+        const scatterTarget = new THREE.Vector3();
+        const cubeSize = 2500;
+        const data = targetMesh.userData;
+
+        for (let i = 0; i < targetMesh.count; i++) {
+          scatterTarget.set(
+            ((Math.sin(i * 12.9898) * 43758.5453) % 1) * cubeSize,
+            ((Math.sin(i * 78.233) * 43758.5453) % 1) * cubeSize,
+            ((Math.sin(i * 39.346) * 43758.5453) % 1) * cubeSize,
+          );
+
+          let sourcePos, sourceScale, sourceRot;
+
+          if (isTransitioning) {
+            if (!isSecondHalf) {
+              sourcePos = data.prevPositions[i] || data.originalPositions[i];
+              sourceScale =
+                data.prevScales[i] !== undefined ? data.prevScales[i] : 0;
+              sourceRot = data.prevRotations[i] || data.originalRotations[i];
+            } else {
+              sourcePos = data.originalPositions[i];
+              sourceScale = data.originalScales[i];
+              sourceRot = data.originalRotations[i];
+            }
+          } else {
+            sourcePos = data.originalPositions[i];
+            sourceScale = data.originalScales[i];
+            sourceRot = data.originalRotations[i];
+          }
+
+          blendedPos.lerpVectors(sourcePos, scatterTarget, morphFactor);
           blendedRot.slerpQuaternions(
-            data.originalRotations[i],
+            sourceRot,
             data.gridRotations[i],
             morphFactor,
           );
 
-          // Combine original orientations with global spinning tracking matrix
-          blendedRot.premultiply(globalSpinQuat);
-
-          // Interpolate structured particle sizes using the synchronized factor
-          const currentScale = THREE.MathUtils.lerp(
-            data.originalScales[i],
+          let currentScale = THREE.MathUtils.lerp(
+            sourceScale,
             data.gridScales[i],
             morphFactor,
           );
+          const zNormalized = (blendedPos.z + cubeSize) / (cubeSize * 2);
+          const zMultiplier = 0.2 + zNormalized * 3.8;
+          const finalScaleMultiplier = 1.0 + (zMultiplier - 1.0) * morphFactor;
+
+          currentScale *= Math.max(0.01, finalScaleMultiplier);
           blendedScaleVec.set(currentScale, currentScale, currentScale);
 
-          // Render matrices directly into the instance buffer
           transformMatrix.compose(blendedPos, blendedRot, blendedScaleVec);
           targetMesh.setMatrixAt(i, transformMatrix);
         }
 
-        // Notify the GPU to update layout transformation arrays
+        if (isTransitioning && currentFrame === loopDuration - 1) {
+          window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
+        }
+
         targetMesh.instanceMatrix.needsUpdate = true;
       }
       break;
+    }
 
     case "default":
-    default:
-      if (window.isExportingLoop) {
-        // --- AUTOMATED BACKGROUND EXPORT MODE ---
-        controls.autoRotate = false;
+    default: {
+      // --- DUAL-BUFFER MORPHING FOR SLOW ROTATION ---
+      if (isTransitioning && targetMesh) {
+        controls.autoRotate = false; // Take manual control of spin
+        const transitionFrames = 120; // 2 seconds
+        time += 1;
+        const progress = Math.min(time / transitionFrames, 1.0);
 
-        if (window.exportRotatedAccumulator === undefined) {
-          window.exportRotatedAccumulator = 0;
+        // Gentle rotation matching the default autoRotate speed
+        controls.rotateLeft(THREE.MathUtils.degToRad(1.5));
+
+        const data = targetMesh.userData;
+
+        // FIXED: Guard clause to prevent race conditions during file parsing
+        if (
+          !data.prevPositions ||
+          !data.originalPositions ||
+          !data.prevRotations ||
+          !data.originalRotations
+        ) {
+          return;
         }
 
-        if (!window.isAnimationLoopComplete) {
-          const defaultIncrement = 0.01;
-          time += defaultIncrement;
-          const defaultLoopDuration = Math.PI * 2;
+        const blendedPos = new THREE.Vector3();
 
-          let progress = time / defaultLoopDuration;
+        const blendedRot = new THREE.Quaternion();
+        const blendedScaleVec = new THREE.Vector3();
+        const transformMatrix = new THREE.Matrix4();
 
-          if (progress >= 1.0) {
-            progress = 1.0;
-            window.isAnimationLoopComplete = true;
-          }
+        const easeInOutSine = -(Math.cos(Math.PI * progress) - 1) / 2;
 
-          const targetTotalRotation = progress * Math.PI * 2;
-          const deltaToRotate =
-            targetTotalRotation - window.exportRotatedAccumulator;
-          window.exportRotatedAccumulator = targetTotalRotation;
+        for (let i = 0; i < targetMesh.count; i++) {
+          let posA = data.prevPositions[i] || data.originalPositions[i];
+          let scaleA =
+            data.prevScales[i] !== undefined ? data.prevScales[i] : 0;
+          let rotA = data.prevRotations[i] || data.originalRotations[i];
 
-          controls.rotateLeft(deltaToRotate);
-        } else {
-          controls.autoRotate = false;
+          blendedPos.lerpVectors(
+            posA,
+            data.originalPositions[i],
+            easeInOutSine,
+          );
+          blendedRot.slerpQuaternions(
+            rotA,
+            data.originalRotations[i],
+            easeInOutSine,
+          );
+          let currentScale = THREE.MathUtils.lerp(
+            scaleA,
+            data.originalScales[i],
+            easeInOutSine,
+          );
+
+          blendedScaleVec.set(currentScale, currentScale, currentScale);
+          transformMatrix.compose(blendedPos, blendedRot, blendedScaleVec);
+          targetMesh.setMatrixAt(i, transformMatrix);
         }
+        targetMesh.instanceMatrix.needsUpdate = true;
+
+        if (progress >= 1.0)
+          window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
       } else {
-        // --- NORMAL INTERACTIVE VIEWPORT MODE ---
-        controls.autoRotate = true;
-        controls.autoRotateSpeed = 5.0;
+        // Standard non-transitioning endless spin behavior
+        if (window.isExportingLoop) {
+          controls.autoRotate = false;
+          if (window.exportRotatedAccumulator === undefined)
+            window.exportRotatedAccumulator = 0;
+          if (!window.isAnimationLoopComplete) {
+            const defaultIncrement = 0.01;
+            time += defaultIncrement;
+            const defaultLoopDuration = Math.PI * 2;
+            let progress = time / defaultLoopDuration;
+            if (progress >= 1.0) {
+              progress = 1.0;
+              window.isAnimationLoopComplete = true;
+            }
+            const targetTotalRotation = progress * Math.PI * 2;
+            const deltaToRotate =
+              targetTotalRotation - window.exportRotatedAccumulator;
+            window.exportRotatedAccumulator = targetTotalRotation;
+            controls.rotateLeft(deltaToRotate);
+          }
+        } else {
+          controls.autoRotate = true;
+          controls.autoRotateSpeed = 5.0;
+        }
       }
       break;
+    }
   }
 };
 

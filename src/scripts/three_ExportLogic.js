@@ -473,23 +473,72 @@ export function exportVideo(
       onStartRecord();
     }
 
+    console.log(
+      `--- Strict Frame-By-Frame Direct-${format.toUpperCase()} Engine Initialized ---`,
+    );
+
     const canvas = renderer.domElement;
     let frameCount = 0;
-
     const mimeType = bgColor ? "image/jpeg" : "image/png";
     const extension = bgColor ? "jpg" : "png";
 
-    console.log(
-      `--- Frame-By-Frame Direct-${format.toUpperCase()} Engine Initialized ---`,
-    );
+    // ==========================================
+    // THE TIME HEIST V2: Multi-Loop Interception
+    // ==========================================
+    const originalPerfNow = window.performance.now.bind(window.performance);
+    const originalDateNow = window.Date.now.bind(window.Date);
+    const originalRAF = window.requestAnimationFrame.bind(window);
+    const originalCancelRAF = window.cancelAnimationFrame.bind(window);
+
+    let simulatedTime = originalPerfNow();
+
+    // 1. Freeze the global clocks
+    window.performance.now = () => simulatedTime;
+    window.Date.now = () => Math.floor(simulatedTime);
+
+    // 2. Intercept ALL background animation loops into an array
+    let rafCallbacks = [];
+    window.requestAnimationFrame = (callback) => {
+      rafCallbacks.push(callback);
+      return Math.random(); // Dummy ID
+    };
+    window.cancelAnimationFrame = () => {}; // Prevent loops from cancelling our fake IDs
+    // ==========================================
 
     const captureNextFrame = async () => {
+      // Step 1: Advance our fake clock by EXACTLY 1/30th of a second
+      simulatedTime += 1000 / 30;
+
+      // Step 2: Flush the queue and run ALL animation loops for this exact moment in time
+      const callbacksToRun = [...rafCallbacks];
+      rafCallbacks = []; // Clear the queue so the loops can re-register themselves for the next frame
+
+      callbacksToRun.forEach((cb) => cb(simulatedTime));
+
+      // Step 3: Render the newly updated scene
       if (composer) {
         composer.render();
       } else {
         renderer.render(scene, activeCamera);
       }
 
+      // Step 4: Update the UI
+      const swalText = document.querySelector(".swal2-html-container");
+      let targetFrames = "...";
+
+      if (typeof durationInSeconds === "number") {
+        targetFrames = durationInSeconds * 30;
+      } else if (window.exportTotalDuration) {
+        targetFrames = window.exportTotalDuration * 30;
+      } else if (window.exportTargetDuration) {
+        targetFrames = window.exportTargetDuration * 30;
+      }
+
+      if (swalText) {
+        swalText.innerText = `Capturing perfect frame ${frameCount} of ${targetFrames}...`;
+      }
+
+      // Step 5: Wait for the browser to finish extracting the high-res Blob (Animation remains fully paused here!)
       const frameBlob = await new Promise((res) => {
         canvas.toBlob(
           res,
@@ -498,114 +547,141 @@ export function exportVideo(
         );
       });
 
+      // Step 6: Save to FFmpeg virtual file system
       const frameName = `frame_${String(frameCount).padStart(4, "0")}.${extension}`;
       await ffmpeg.writeFile(frameName, await fetchFile(frameBlob));
       frameCount++;
 
+      // Step 7: Check if we are done
       let isSequenceFinished = false;
       if (typeof durationInSeconds === "number") {
         if (frameCount >= durationInSeconds * 30) isSequenceFinished = true;
       } else {
-        if (window.isAnimationLoopComplete) isSequenceFinished = true;
+        const totalExportDuration =
+          window.exportTotalDuration || window.exportTargetDuration;
+
+        if (totalExportDuration) {
+          if (frameCount >= totalExportDuration * 30) {
+            isSequenceFinished = true;
+          }
+        } else if (window.isAnimationLoopComplete) {
+          isSequenceFinished = true;
+        }
       }
 
+      // Step 8: Route logic
       if (isSequenceFinished) {
+        if (swalText)
+          swalText.innerText = `Compiling video... this may take a moment.`;
         console.log(
           `Captured ${frameCount} pristine frames. Initializing direct compilation...`,
         );
-
-        try {
-          let outFilename = `output.${format}`;
-          let ffmpegArgs = [
-            "-framerate",
-            "30",
-            "-i",
-            `frame_%04d.${extension}`,
-          ];
-
-          if (format === "mp4") {
-            ffmpegArgs.push(
-              "-c:v",
-              "libx264",
-              "-tune",
-              "animation",
-              "-pix_fmt",
-              "yuv420p",
-              "-crf",
-              "12",
-              outFilename,
-            );
-          } else if (format === "mov") {
-            ffmpegArgs.push(
-              "-c:v",
-              "prores_ks",
-              "-profile:v",
-              "4",
-              "-pix_fmt",
-              "yuva444p10le",
-              outFilename,
-            );
-          } else {
-            ffmpegArgs.push(
-              "-c:v",
-              "libvpx-vp9",
-              "-crf",
-              "10",
-              "-b:v",
-              "0",
-              "-pix_fmt",
-              bgColor ? "yuv420p" : "yuva420p",
-              outFilename,
-            );
-          }
-
-          await ffmpeg.exec(ffmpegArgs);
-          const finalVideoData = await ffmpeg.readFile(outFilename);
-
-          const videoTypeMap = {
-            mp4: "video/mp4",
-            mov: "video/quicktime",
-            webm: "video/webm",
-          };
-          resolve(
-            new Blob([finalVideoData.buffer], { type: videoTypeMap[format] }),
-          );
-        } catch (err) {
-          reject(err);
-        } finally {
-          renderer.setSize(originalSize.x, originalSize.y, false);
-          if (composer) composer.setSize(originalSize.x, originalSize.y);
-
-          if (activeCamera.isPerspectiveCamera) {
-            activeCamera.aspect = originalAspect;
-          } else if (activeCamera.isOrthographicCamera) {
-            activeCamera.left = originalLeft;
-            activeCamera.right = originalRight;
-          }
-          activeCamera.updateProjectionMatrix();
-
-          scene.background = originalBackground;
-          renderer.setClearAlpha(originalClearAlpha);
-
-          for (let i = 0; i < frameCount; i++) {
-            try {
-              await ffmpeg.deleteFile(
-                `frame_${String(i).padStart(4, "0")}.${extension}`,
-              );
-            } catch (e) {}
-          }
-          try {
-            await ffmpeg.deleteFile(`output.${format}`);
-          } catch (e) {}
-        }
+        compileVideo();
       } else {
-        requestAnimationFrame(captureNextFrame);
+        // Schedule the next frame synchronously on the next event loop tick
+        setTimeout(captureNextFrame, 0);
       }
     };
 
-    setTimeout(() => {
-      requestAnimationFrame(captureNextFrame);
-    }, 200);
+    // --- FFmpeg Compilation Logic ---
+    const compileVideo = async () => {
+      try {
+        let outFilename = `output.${format}`;
+        let ffmpegArgs = ["-framerate", "30", "-i", `frame_%04d.${extension}`];
+
+        if (format === "mp4") {
+          ffmpegArgs.push(
+            "-c:v",
+            "libx264",
+            "-tune",
+            "animation",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "12",
+            outFilename,
+          );
+        } else if (format === "mov") {
+          ffmpegArgs.push(
+            "-c:v",
+            "prores_ks",
+            "-profile:v",
+            "4",
+            "-pix_fmt",
+            "yuva444p10le",
+            outFilename,
+          );
+        } else {
+          ffmpegArgs.push(
+            "-c:v",
+            "libvpx-vp9",
+            "-crf",
+            "10",
+            "-b:v",
+            "0",
+            "-pix_fmt",
+            bgColor ? "yuv420p" : "yuva420p",
+            outFilename,
+          );
+        }
+
+        await ffmpeg.exec(ffmpegArgs);
+        const finalVideoData = await ffmpeg.readFile(outFilename);
+
+        const videoTypeMap = {
+          mp4: "video/mp4",
+          mov: "video/quicktime",
+          webm: "video/webm",
+        };
+        resolve(
+          new Blob([finalVideoData.buffer], { type: videoTypeMap[format] }),
+        );
+      } catch (err) {
+        reject(err);
+      } finally {
+        // ==========================================
+        // RESTORE THE REAL WORLD
+        // ==========================================
+        window.performance.now = originalPerfNow;
+        window.Date.now = originalDateNow;
+        window.requestAnimationFrame = originalRAF;
+        window.cancelAnimationFrame = originalCancelRAF;
+
+        // Resume all background animation loops naturally into the real-world timeline
+        rafCallbacks.forEach((cb) => originalRAF(cb));
+        rafCallbacks = [];
+        // ==========================================
+
+        renderer.setSize(originalSize.x, originalSize.y, false);
+        if (composer) composer.setSize(originalSize.x, originalSize.y);
+
+        if (activeCamera.isPerspectiveCamera) {
+          activeCamera.aspect = originalAspect;
+        } else if (activeCamera.isOrthographicCamera) {
+          activeCamera.left = originalLeft;
+          activeCamera.right = originalRight;
+        }
+        activeCamera.updateProjectionMatrix();
+
+        scene.background = originalBackground;
+        renderer.setClearAlpha(originalClearAlpha);
+
+        // Cleanup FFmpeg virtual files
+        for (let i = 0; i < frameCount; i++) {
+          try {
+            await ffmpeg.deleteFile(
+              `frame_${String(i).padStart(4, "0")}.${extension}`,
+            );
+          } catch (e) {}
+        }
+        try {
+          await ffmpeg.deleteFile(`output.${format}`);
+        } catch (e) {}
+      }
+    };
+
+    // Kick off the strict capture loop
+    setTimeout(captureNextFrame, 100);
   });
 }
 

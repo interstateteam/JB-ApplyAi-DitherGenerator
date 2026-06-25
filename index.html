@@ -90,12 +90,21 @@
                                 Mode Selection
                             </option>
 
-                            <option value="3DMode">3D Mode (Default)</option>
-                            <option value="PatternGenerator ">
-                                Pattern Generator (OFFLINE)
+                            <option value="AnimationMode">
+                                Animation Mode (Default)
+                            </option>
+                            <option value="TransitionMode ">
+                                Transition Mode
                             </option>
                         </select>
                     </div>
+
+                    <input
+                        type="file"
+                        id="hiddenTransitionInput"
+                        accept="image/*"
+                        class="hidden"
+                    />
                 </div>
 
                 <!-- Animation Presets -->
@@ -314,13 +323,10 @@
                             <option value="" disabled selected hidden>
                                 Shape
                             </option>
-
                             <option value="icosahedron">
                                 Pen Dot (Default)
                             </option>
-                            <option value="box">Cube</option>
-                            <option value="sphere">Sphere</option>
-                            <option value="torus">Torus</option>
+                            <option value="logomark">Logomark</option>
                         </select>
                     </div>
                     <div
