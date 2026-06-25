@@ -14,8 +14,8 @@ export let composer = null;
 
 // --- Configuration ---
 const cameraSetup = {
-  position: { x: 0, y: 0, z: 1500 },
-  target: { x: 0, y: 0, z: 500 },
+  position: { x: 0, y: 0, z: 1000 },
+  target: { x: 0, y: 0, z: 0 },
   zoom: 1,
 };
 
@@ -70,8 +70,8 @@ export const initThree = (canvasId) => {
     window.innerWidth / 2,
     window.innerHeight / 2,
     window.innerHeight / -2,
-    1,
-    2000,
+    -2000,
+    4000,
   );
   camera.position.set(
     cameraSetup.position.x,

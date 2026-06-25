@@ -26,13 +26,18 @@ export async function export3D(scene) {
         const quaternion = new THREE.Quaternion();
         const scale = new THREE.Vector3();
 
+        // Grab the VIP list from the mesh
+        const activeInstances = object.userData.activeInstances;
+
         for (let i = 0; i < count; i++) {
+          // --- FIXED: Ignore physical size. If it's flagged as background (0), skip it immediately. ---
+          if (activeInstances && activeInstances[i] === 0) continue;
+
           object.getMatrixAt(i, matrix);
           matrix.decompose(position, quaternion, scale);
 
-          if (scale.x < 1) {
-            continue;
-          }
+          // Fallback sanity check just to prevent absolute zeros from crashing math
+          if (scale.x <= 0.0001) continue;
 
           const dummyMesh = new THREE.Mesh(object.geometry, object.material);
           dummyMesh.applyMatrix4(matrix);
@@ -58,7 +63,6 @@ export async function export3D(scene) {
 }
 
 // --- Resolution Setup Helpers ---
-
 function setupExportResolution(
   renderer,
   activeCamera,
@@ -104,7 +108,6 @@ function restoreOriginalResolution(renderer, activeCamera, originalState) {
 }
 
 // --- Export Image Logic ---
-
 export function exportToJPG(scene, renderer, camera) {
   if (!scene || !renderer || !camera) {
     console.error("Fundamental objects missing");
@@ -189,7 +192,6 @@ export function exportToPNG(scene, renderer, camera) {
 }
 
 // --- SVG Pipeline ---
-
 function convertToSVG_export(scene, camera) {
   const canvasWidth = window.innerWidth;
   const canvasHeight = window.innerHeight;
@@ -205,13 +207,16 @@ function convertToSVG_export(scene, camera) {
     if (!object.isInstancedMesh) return;
 
     const posAttr = object.geometry.attributes.position;
+    const activeInstances = object.userData.activeInstances;
 
     for (let i = 0; i < object.count; i++) {
+      if (activeInstances && activeInstances[i] === 0) continue;
+
       object.getMatrixAt(i, matrix);
       matrix.premultiply(object.matrixWorld);
 
       instanceScale.setFromMatrixScale(matrix);
-      if (instanceScale.x <= 1) continue;
+      if (instanceScale.x <= 0.0001) continue;
 
       const pathPoints = [];
 
@@ -239,10 +244,10 @@ function convertToSVG_export(scene, camera) {
   `;
 }
 
-function convertToSVG_refine(svgString) {
+async function convertToSVG_refine(svgString) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(svgString, "image/svg+xml");
-  const paths = doc.querySelectorAll("path");
+  const paths = Array.from(doc.querySelectorAll("path"));
 
   const canvasWidth =
     doc.documentElement.getAttribute("width") || window.innerWidth;
@@ -250,84 +255,139 @@ function convertToSVG_refine(svgString) {
     doc.documentElement.getAttribute("height") || window.innerHeight;
   const finalSvgPaths = [];
 
-  paths.forEach((path, index) => {
-    const dAttr = path.getAttribute("d");
-    if (!dAttr) return;
+  const totalDots = paths.length;
+  const CHUNK_SIZE = 1000;
+  const totalChunks = Math.ceil(totalDots / CHUNK_SIZE);
 
-    const coords = dAttr.match(/[-+]?[0-9]*\.?[0-9]+/g);
-    if (!coords) return;
+  console.log(`--- SVG Export Started ---`);
+  console.log(`Total dots to refine: ${totalDots}`);
 
-    const triangles = [];
-    for (let i = 0; i < coords.length; i += 6) {
-      if (i + 5 >= coords.length) break;
+  for (let i = 0; i < paths.length; i += CHUNK_SIZE) {
+    const chunk = paths.slice(i, i + CHUNK_SIZE);
+    const currentChunk = Math.floor(i / CHUNK_SIZE) + 1;
 
-      const pA = [Number(coords[i]), Number(coords[i + 1])];
-      const pB = [Number(coords[i + 2]), Number(coords[i + 3])];
-      const pC = [Number(coords[i + 4]), Number(coords[i + 5])];
+    const percentComplete = Math.round((i / totalDots) * 100);
+    console.log(
+      `Processing SVG chunk ${currentChunk}/${totalChunks} | ${percentComplete}% complete...`,
+    );
 
-      triangles.push([[pA, pB, pC, pA]]);
-    }
+    chunk.forEach((path, chunkIndex) => {
+      const absoluteIndex = i + chunkIndex;
+      const dAttr = path.getAttribute("d");
+      if (!dAttr) return;
 
-    if (triangles.length === 0) return;
+      const coords = dAttr.match(/[-+]?[0-9]*\.?[0-9]+/g);
+      if (!coords) return;
 
-    let unified = null;
+      const triangles = [];
+      for (let j = 0; j < coords.length; j += 6) {
+        if (j + 5 >= coords.length) break;
 
-    try {
-      unified = polygonClipping.union(...triangles);
-    } catch (initialError) {
+        const pA = [Number(coords[j]), Number(coords[j + 1])];
+        const pB = [Number(coords[j + 2]), Number(coords[j + 3])];
+        const pC = [Number(coords[j + 4]), Number(coords[j + 5])];
+
+        // --- CULLING ---
+        // Calculate signed area to drop degenerate geometry and back-facing polygons.
+        // NOTE: If all dots disappear, change `< 0.1` to `> -0.1` (SVG Y-axis inversion).
+        const signedArea =
+          (pB[0] - pA[0]) * (pC[1] - pA[1]) - (pC[0] - pA[0]) * (pB[1] - pA[1]);
+
+        if (signedArea < 0.00001) continue;
+
+        triangles.push([[pA, pB, pC, pA]]);
+      }
+
+      // If all triangles were culled, there's nothing to draw
+      if (triangles.length === 0) return;
+
+      let unified = null;
+
       try {
-        const roundedTriangles = triangles.map((polygon) => {
-          const roundedRing = polygon[0].map((pt) => [
-            Math.round(pt[0] * 10) / 10,
-            Math.round(pt[1] * 10) / 10,
-          ]);
-          return [roundedRing];
-        });
-        unified = polygonClipping.union(...roundedTriangles);
-      } catch (roundingError) {
-        try {
-          const nudgedTriangles = triangles.map((polygon, polyIdx) => {
-            const nudgedRing = polygon[0].map((pt, ptIdx) => {
-              if (ptIdx === 3) return null;
-              const nudgeX = (((polyIdx * 4 + ptIdx) % 5) - 2) * 0.02;
-              const nudgeY = (((polyIdx * 4 + ptIdx) % 7) - 3) * 0.02;
-              return [pt[0] + nudgeX, pt[1] + nudgeY];
-            });
-            nudgedRing[3] = nudgedRing[0];
-            return [nudgedRing];
-          });
-          unified = polygonClipping.union(...nudgedTriangles);
-        } catch (nudgeError) {
-          console.error(`Critical: Unable to repair dot #${index + 1}`);
+        // --- ATTEMPT 1: Fast Batch Union ---
+        unified = polygonClipping.union(...triangles);
+      } catch (batchError) {
+        // --- ATTEMPT 2: Progressive Reconstruction ---
+        console.log(
+          `Dot #${absoluteIndex + 1}: Batch union failed. Initiating progressive reconstruction...`,
+        );
+
+        unified = [];
+        let successfulMerges = 0;
+
+        for (let k = 0; k < triangles.length; k++) {
+          if (unified.length === 0) {
+            unified = [triangles[k]];
+            successfulMerges++;
+            continue;
+          }
+
+          try {
+            unified = polygonClipping.union(unified, triangles[k]);
+            successfulMerges++;
+          } catch (stepError) {
+            // Try micro-nudge for this specific toxic triangle
+            try {
+              const nudgedTriangle = triangles[k].map((polygon) => {
+                const nudgedRing = polygon[0].map((pt, ptIdx) => {
+                  if (ptIdx === 3) return null;
+                  const nudgeX = (ptIdx % 2 === 0 ? 1 : -1) * 0.001;
+                  const nudgeY = (ptIdx % 2 !== 0 ? 1 : -1) * 0.001;
+                  return [pt[0] + nudgeX, pt[1] + nudgeY];
+                });
+                nudgedRing[3] = nudgedRing[0];
+                return [nudgedRing];
+              });
+
+              unified = polygonClipping.union(unified, nudgedTriangle);
+              successfulMerges++;
+            } catch (nudgeError) {
+              // Graceful degradation: The nudge failed. Drop this specific triangle.
+            }
+          }
+        }
+
+        // --- STRUCTURAL INTEGRITY CHECK ---
+        // If we didn't salvage at least 5 triangles, the shape is likely a mangled mess. Delete it.
+        if (successfulMerges < 5) {
+          console.warn(
+            `Dot #${absoluteIndex + 1}: Shape collapsed (only ${successfulMerges} valid triangles). Deleting dot entirely.`,
+          );
+          unified = null;
+        } else {
+          console.log(
+            `Dot #${absoluteIndex + 1}: Recovered successfully with ${successfulMerges}/${triangles.length} triangles.`,
+          );
         }
       }
-    }
 
-    if (unified) {
-      const unifiedPathData = [];
-      unified.forEach((polygon) => {
-        const outerRing = polygon[0];
-        outerRing.forEach((pt, idx) => {
-          unifiedPathData.push(
-            `${idx === 0 ? "M" : "L"}${pt[0].toFixed(2)} ${pt[1].toFixed(2)}`,
-          );
+      // --- FINAL BUILD ---
+      if (unified) {
+        const unifiedPathData = [];
+        unified.forEach((polygon) => {
+          const outerRing = polygon[0];
+          outerRing.forEach((pt, idx) => {
+            unifiedPathData.push(
+              `${idx === 0 ? "M" : "L"}${pt[0].toFixed(2)} ${pt[1].toFixed(2)}`,
+            );
+          });
+          unifiedPathData.push("Z");
         });
-        unifiedPathData.push("Z");
-      });
 
-      if (unifiedPathData.length > 0) {
-        finalSvgPaths.push(
-          `<path d="${unifiedPathData.join(" ")}" fill="black" stroke="none" />`,
-        );
+        if (unifiedPathData.length > 0) {
+          finalSvgPaths.push(
+            `<path d="${unifiedPathData.join(" ")}" fill="black" stroke="none" />`,
+          );
+        }
       }
-    } else {
-      let redPath = path.outerHTML;
-      redPath = redPath.includes("fill=")
-        ? redPath.replace(/fill="[^"]*"/g, 'fill="red"')
-        : redPath.replace("<path", '<path fill="red"');
-      finalSvgPaths.push(redPath);
-    }
-  });
+      // Notice: The "else" block that exported the red path has been completely removed.
+      // If unified is null, the dot is simply skipped.
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  console.log(`Building final SVG document...`);
 
   const finalSvgDocument = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">
@@ -338,19 +398,24 @@ function convertToSVG_refine(svgString) {
   const blob = new Blob([finalSvgDocument], {
     type: "image/svg+xml;charset=utf-8",
   });
+
+  console.log(`--- SVG Export Complete! ---`);
   return URL.createObjectURL(blob);
 }
 
-export function convertToSVG(scene, camera) {
+export async function convertToSVG(scene, camera) {
+  console.log("Extracting raw geometry from Three.js scene...");
   const rawSvg = convertToSVG_export(scene, camera);
-  if (!rawSvg) throw new Error("Failed to generate raw SVG");
-  return convertToSVG_refine(rawSvg);
+
+  if (!rawSvg) {
+    console.error("Failed to extract raw geometry.");
+    throw new Error("Failed to generate raw SVG");
+  }
+
+  return await convertToSVG_refine(rawSvg);
 }
 
-// --- REFACTORED: Frame-By-Frame Export Video Logic ---
-
-// --- REFACTORED: Unified Single-Pass Video Render Engine ---
-// --- FIXED: Unified Single-Pass Video Render Engine ---
+// --- Export Video Logic ---
 export function exportVideo(
   renderer,
   scene,
@@ -375,16 +440,14 @@ export function exportVideo(
       await ffmpeg.load();
     }
 
-    // 1. Cache current viewport states (Added left and right bounds caching)
     const originalSize = new THREE.Vector2();
     renderer.getSize(originalSize);
     const originalAspect = activeCamera.aspect;
-    const originalLeft = activeCamera.left; // 🌟 Cached
-    const originalRight = activeCamera.right; // 🌟 Cached
+    const originalLeft = activeCamera.left;
+    const originalRight = activeCamera.right;
     const originalBackground = scene.background;
     const originalClearAlpha = renderer.getClearAlpha();
 
-    // 2. Configure backgrounds based on format demands
     if (bgColor) {
       scene.background = new THREE.Color(bgColor);
       renderer.setClearAlpha(1);
@@ -393,7 +456,6 @@ export function exportVideo(
       renderer.setClearAlpha(0);
     }
 
-    // 3. Scale up to target resolution and apply proper Orthographic scaling math
     renderer.setSize(targetWidth, targetHeight, false);
     if (composer) composer.setSize(targetWidth, targetHeight);
 
@@ -401,7 +463,6 @@ export function exportVideo(
     if (activeCamera.isPerspectiveCamera) {
       activeCamera.aspect = targetAspect;
     } else if (activeCamera.isOrthographicCamera) {
-      // 🌟 Correctly recalculate boundaries based on target 2.5K aspect ratio
       const frustumHeight = activeCamera.top - activeCamera.bottom;
       activeCamera.left = -(frustumHeight * targetAspect) / 2;
       activeCamera.right = (frustumHeight * targetAspect) / 2;
@@ -512,15 +573,12 @@ export function exportVideo(
         } catch (err) {
           reject(err);
         } finally {
-          // --- CLEANUP TIMELINE ---
-          // Pass the original left and right coordinates back to the reset injector
           renderer.setSize(originalSize.x, originalSize.y, false);
           if (composer) composer.setSize(originalSize.x, originalSize.y);
 
           if (activeCamera.isPerspectiveCamera) {
             activeCamera.aspect = originalAspect;
           } else if (activeCamera.isOrthographicCamera) {
-            // 🌟 Restore original boundaries so preview layout snaps back perfectly
             activeCamera.left = originalLeft;
             activeCamera.right = originalRight;
           }

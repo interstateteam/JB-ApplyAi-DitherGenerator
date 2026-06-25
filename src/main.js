@@ -16,7 +16,7 @@ import {
   ImageUp,
   CircleGauge,
   Snail,
-  Volleyball,
+  ZoomIn,
   Focus,
   FileDown,
   Box,
@@ -41,12 +41,13 @@ import { sampleImage } from "./scripts/three_imageLogic.js";
 
 // --- State & Constants ---
 const scaleSliders = {
-  pixelAmount: { min: 30, max: 5, action: "redraw" },
-  pixelScale: { min: 50, max: 350, action: "redraw" },
+  pixelAmount: { min: 20, max: 4, action: "redraw" },
+  pixelScale: { min: 50, max: 250, action: "redraw" },
   gridScale: { min: 4, max: 12, action: "redraw" },
   pixelDistortion: { min: 0, max: 30, action: "redraw" },
   pixelGravity: { min: 0, max: 500, action: "redraw" },
-  clipDepth: { min: 1000, max: 3000, action: "camera" },
+  scaleRatio: { min: 0, max: 100, action: "redraw" },
+  //clipDepth removed — remove action
 };
 
 let currentImage = null;
@@ -161,8 +162,8 @@ document.getElementById("spinAnimation").addEventListener("click", () => {
 });
 
 document.getElementById("bounceAnimation").addEventListener("click", () => {
-  currentActiveAnimation = "thirdMode";
-  handleAnimationSwitch("thirdMode");
+  currentActiveAnimation = "breakApart";
+  handleAnimationSwitch("breakApart");
 });
 
 document.getElementById("pickImage").addEventListener("change", (e) => {
@@ -261,8 +262,18 @@ window.addEventListener("load", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
+    // Declare the URL outside the try block so the 'finally' block can clean it up later
+    let modelUrl = null;
+
     try {
-      const modelUrl = export3D(scene);
+      // 1. AWAIT the export function to get the raw binary data
+      const gltfData = await export3D(scene);
+
+      // 2. Wrap the raw data into a Blob file
+      const blob = new Blob([gltfData], { type: "model/gltf-binary" });
+
+      // 3. Create a valid browser URL for the Blob
+      modelUrl = URL.createObjectURL(blob);
 
       newSwal.fire({
         title: "Finished",
@@ -270,7 +281,9 @@ window.addEventListener("load", () => {
         timer: 4000,
         showConfirmButton: false,
       });
-      triggerDownload(modelUrl, "ApplyAi_3DModel.gltf", true);
+
+      // 4. Download as a .glb (GL Transmission Format Binary)
+      triggerDownload(modelUrl, "ApplyAi_3DModel.glb", true);
     } catch (error) {
       Swal.fire("Error", "3D Export failed: " + error.message, "error");
       console.error("3D export process failed:", error);
@@ -313,7 +326,7 @@ window.addEventListener("load", () => {
           // 1. .svg Format Chosen
           newSwal.fire({
             title: "Generating SVG",
-            text: "\nConverting 3D to 2D\nThis may take a moment.",
+            text: "\nConverting 3D to 2D\nThis may take some time.\n\n Hint: Open the console to see what's happening.",
             allowOutsideClick: false,
             allowEscapeKey: false,
             didOpen: () => Swal.showLoading(),
@@ -321,7 +334,7 @@ window.addEventListener("load", () => {
 
           await new Promise((resolve) => setTimeout(resolve, 100));
 
-          svgUrl = convertToSVG(scene, camera);
+          svgUrl = await convertToSVG(scene, camera);
 
           newSwal.fire({
             title: "Finished",
@@ -462,7 +475,7 @@ window.addEventListener("load", () => {
               window.exportRotatedAccumulator = 0;
               window.isAnimationLoopComplete = false;
 
-              const loopDurations = { default: 8, eased: 5, thirdMode: 6 };
+              const loopDurations = { default: 8, eased: 5, breakApart: 6 };
               window.exportTargetDuration =
                 loopDurations[currentActiveAnimation] || 8;
 
@@ -570,7 +583,7 @@ window.addEventListener("load", () => {
       ImageUp,
       CircleGauge,
       Snail,
-      Volleyball,
+      ZoomIn,
       Focus,
       Box,
       FileDown,

@@ -58,11 +58,11 @@ export const updateThreeGrid = (img, settings) => {
     gridScale,
     pixelDistortion,
     pixelGravity = 0,
+    scaleRatio,
     alignmentScale,
   } = settings;
   const chaosLevel = (pixelDistortion || 0) / 100;
 
-  // Normalize gravity to a 0.0 - 1.0 range for scaling calculations
   const gravityNorm = Math.max(0, Math.min(100, pixelGravity)) / 100;
 
   currentGeometry = createWarpedGeometry(chaosLevel);
@@ -82,17 +82,24 @@ export const updateThreeGrid = (img, settings) => {
 
   let instanceIndex = 0;
 
+  const originalPositions = [];
+  const gridPositions = [];
+  const originalRotations = [];
+  const gridRotations = [];
+  const originalScales = [];
+  const gridScales = [];
+
+  // --- NEW: The VIP List. Tracks exactly which dots are foreground vs background ---
+  const activeInstances = new Uint8Array(cols * rows);
+
   for (let col = 0; col < cols; col++) {
     for (let row = 0; row < rows; row++) {
       const { brightness, alpha } = imgData
         ? getPixelData(imgData, col, row, cols, rows, minBright, maxBright)
         : { brightness: 0, alpha: 0 };
 
-      // 1. Position & Gravity Shift
       let shiftX = 0,
         shiftY = 0;
-
-      // We calculate this outside the alpha check now so we can use it for scaling later
       const smallnessInfluence =
         brightness < 0.1 ? 0 : (brightness - 0.1) / 0.9;
 
@@ -115,9 +122,7 @@ export const updateThreeGrid = (img, settings) => {
         };
 
         if (!Object.values(neighbors).some((n) => n.alpha <= 0.01)) {
-          // Allows dots to travel up to 5 grid spacings away to snap into lines
           const maxShift = spacing * 5.0;
-
           const rawShiftX = calculateShift(
             neighbors.right.brightness - neighbors.left.brightness,
             pixelGravity,
@@ -130,8 +135,6 @@ export const updateThreeGrid = (img, settings) => {
             spacing,
             maxShift,
           );
-
-          // Safety Check: If the HTML element doesn't exist yet, default factor to 1 (100% aligned)
           const alignmentFactor = document.getElementById("alignmentScale")
             ? alignmentScale / 100
             : 1.0;
@@ -141,32 +144,65 @@ export const updateThreeGrid = (img, settings) => {
         }
       }
 
-      // 2. Scale & Appearance
       const isBackground = alpha <= 0.05 || brightness > 0.9;
 
+      // Mark the VIP list: 1 for active foreground dots, 0 for invisible backgrounds
+      activeInstances[instanceIndex] = isBackground ? 0 : 1;
+
       const fadeOutFactor = 1.0 - smallnessInfluence * gravityNorm;
+
+      // Clean, robust scale math (0 to 100 slider translates to a 0.0 to 2.0 multiplier)
+      const varianceWeight =
+        typeof scaleRatio === "number" ? scaleRatio / 50 : 1.0;
+      const originalVariance = 0.3 + Math.pow(1.0 - brightness, 2) * 1.5;
+      const midPoint = 1.05;
+      const sizeModifier =
+        midPoint + (originalVariance - midPoint) * varianceWeight;
 
       const baseScale = isBackground
         ? 0
         : (pixelScale / 100) *
           (gridScale / 5) *
-          (0.3 + Math.pow(1.0 - brightness, 2) * 1.5) *
-          Math.max(0, fadeOutFactor); // Apply the fade multiplier here
+          sizeModifier *
+          Math.max(0, fadeOutFactor);
 
       const wobble = 1.0 + THREE.MathUtils.randFloatSpread(0.5 * chaosLevel);
+      const finalOriginalScale = baseScale * wobble;
 
-      // 3. Update Object
-      dummyObject.position.set(
+      const objPos = new THREE.Vector3(
         (col - (cols - 1) / 2) * spacing + shiftX,
         (row - (rows - 1) / 2) * spacing + shiftY,
-        (1.0 - brightness) * 1200,
+        (1.0 - brightness) * 1200 - 600,
       );
-      dummyObject.scale.setScalar(baseScale * wobble);
-      dummyObject.rotation.set(
+      const objRot = new THREE.Euler(
         Math.random() * Math.PI * 2,
         Math.random() * Math.PI * 2,
         Math.random() * Math.PI * 2,
       );
+
+      const spreadX = 1.6;
+      const spreadY = 1;
+      const spreadZ = 15;
+      const depthStep = ((col + row) % 8) - 4;
+
+      const gPos = new THREE.Vector3(
+        (col - (cols - 1) / 2) * spacing * spreadX,
+        (row - (rows - 1) / 2) * spacing * spreadY,
+        depthStep * spacing * spreadZ,
+      );
+      const gRot = new THREE.Euler(0, 0, 0);
+      const finalGridScale = (pixelScale / 100) * (gridScale / 5) * 0.6;
+
+      originalPositions.push(objPos);
+      gridPositions.push(gPos);
+      originalRotations.push(new THREE.Quaternion().setFromEuler(objRot));
+      gridRotations.push(new THREE.Quaternion().setFromEuler(gRot));
+      originalScales.push(finalOriginalScale);
+      gridScales.push(finalGridScale);
+
+      dummyObject.position.copy(objPos);
+      dummyObject.rotation.copy(objRot);
+      dummyObject.scale.setScalar(finalOriginalScale);
 
       colorHelper.setScalar(brightness);
       instancedMesh.setColorAt(instanceIndex, colorHelper);
@@ -175,6 +211,17 @@ export const updateThreeGrid = (img, settings) => {
       instanceIndex++;
     }
   }
+
+  // Attach the VIP list to userData so the exporter can read it
+  instancedMesh.userData = {
+    originalPositions,
+    gridPositions,
+    originalRotations,
+    gridRotations,
+    originalScales,
+    gridScales,
+    activeInstances,
+  };
 
   if (imgData) instancedMesh.instanceColor.needsUpdate = true;
   scene.add(instancedMesh);

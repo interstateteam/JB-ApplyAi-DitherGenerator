@@ -21,6 +21,7 @@
     "@ffmpeg/util": "^0.12.2",
     "@tailwindcss/vite": "^4.3.0",
     "d3-polygon": "^3.0.1",
+    "gifuct-js": "^2.1.2",
     "lucide": "^1.17.0",
     "polygon-clipping": "^0.15.7",
     "sweetalert2": "^11.26.25",
