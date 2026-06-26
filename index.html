@@ -4,8 +4,8 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>DitherFile</title>
-      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-Dc0gbarR.js"></script>
-      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-aEbz3sef.css">
+      <script type="module" crossorigin src="/JB-ApplyAi-DitherGenerator/assets/index-DSprSzg7.js"></script>
+      <link rel="stylesheet" crossorigin href="/JB-ApplyAi-DitherGenerator/assets/index-BG5LTXgc.css">
     </head>
     <body class="bg-ApplyDark">
         <!-- Canvas for the 3D Space -->
@@ -91,12 +91,21 @@
                                 Mode Selection
                             </option>
 
-                            <option value="3DMode">3D Mode (Default)</option>
-                            <option value="PatternGenerator ">
-                                Pattern Generator (OFFLINE)
+                            <option value="AnimationMode">
+                                Animation Mode (Default)
+                            </option>
+                            <option value="TransitionMode ">
+                                Transition Mode
                             </option>
                         </select>
                     </div>
+
+                    <input
+                        type="file"
+                        id="hiddenTransitionInput"
+                        accept="image/*"
+                        class="hidden"
+                    />
                 </div>
 
                 <!-- Animation Presets -->
@@ -135,11 +144,31 @@
                     </div>
 
                     <div
-                        id="bounceAnimation"
+                        id="breakApartAnimation"
                         class="group w-20 place-items-center place-content-center cursor-pointer"
                     >
                         <i
-                            data-lucide="zoom-in"
+                            data-lucide="expand"
+                            class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                        ></i>
+                    </div>
+
+                    <div
+                        id="implodeAnimation"
+                        class="group w-20 place-items-center place-content-center cursor-pointer"
+                    >
+                        <i
+                            data-lucide="shrink"
+                            class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                        ></i>
+                    </div>
+
+                    <div
+                        id="scrambleAnimation"
+                        class="group w-20 place-items-center place-content-center cursor-pointer"
+                    >
+                        <i
+                            data-lucide="unfold-horizontal"
                             class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
                         ></i>
                     </div>
@@ -315,13 +344,10 @@
                             <option value="" disabled selected hidden>
                                 Shape
                             </option>
-
                             <option value="icosahedron">
                                 Pen Dot (Default)
                             </option>
-                            <option value="box">Cube</option>
-                            <option value="sphere">Sphere</option>
-                            <option value="torus">Torus</option>
+                            <option value="logomark">Logomark</option>
                         </select>
                     </div>
                     <div
