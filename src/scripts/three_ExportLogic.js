@@ -5,8 +5,8 @@ import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import polygonClipping from "polygon-clipping";
 
-const targetWidth = 2560;
-const targetHeight = 1440;
+const targetWidth = 3840;
+const targetHeight = 2160;
 
 const ffmpeg = new FFmpeg();
 
