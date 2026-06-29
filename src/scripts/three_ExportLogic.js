@@ -5,8 +5,8 @@ import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import polygonClipping from "polygon-clipping";
 
-const targetWidth = 2048;
-const targetHeight = 1556;
+const targetWidth = 2160;
+const targetHeight = 1440;
 
 // --- Export 3D Shape Logic ---
 export async function export3D(scene) {
@@ -487,16 +487,19 @@ export function exportVideo(
     };
     window.cancelAnimationFrame = () => {};
 
+    // =========================================================
+    // NATIVE WEBM CHANNEL
+    // =========================================================
     if (format === "webm") {
       console.log("--- Native Browser WebM Engine Initialized ---");
 
       const chunks = [];
-      // Capture canvas stream at 0 FPS (we will manually push frames using requestFrame())
       const stream = canvas.captureStream(0);
       const track = stream.getVideoTracks()[0];
 
-      // Select best native WebM type
-      const mimeType = "video/webm;codecs=vp9";
+      const mimeType = bgColor
+        ? "video/webm;codecs=vp9"
+        : "video/webm;codecs=vp9";
       const recorder = new MediaRecorder(stream, {
         mimeType,
         videoBitsPerSecond: 25000000,
@@ -513,54 +516,70 @@ export function exportVideo(
 
       recorder.start();
 
+      // ✅ STRUCTURAL FIX: Track the pipeline state directly inside the loop
+      let isFlushing = false;
+      let flushFrames = 0;
+
       const recordNextFrame = async () => {
-        simulatedTime += 1000 / 30;
-
-        const callbacksToRun = [...rafCallbacks];
-        rafCallbacks = [];
-        callbacksToRun.forEach((cb) => cb(simulatedTime));
-
+        // 1. Render the current state (Captures Frame 0 accurately on loop 1)
         if (composer) {
           composer.render();
         } else {
           renderer.render(scene, activeCamera);
         }
 
-        // Force native stream to grab the freshly rendered canvas pixels
+        // 2. Request video track grab
         if (track && typeof track.requestFrame === "function") {
           track.requestFrame();
         }
 
-        // Update loader UI text
         const swalText = document.querySelector(".swal2-html-container");
         if (swalText) swalText.innerText = `Recording frame ${frameCount}...`;
-
         frameCount++;
 
-        let isSequenceFinished = false;
-        if (window.isAnimationLoopComplete) {
-          if (window.exportTotalDuration) {
-            const gifFrames = Math.round(window.exportTotalDuration * 30);
-            if (frameCount > 0 && frameCount % gifFrames === 0)
+        // 3. Evaluate completion status ONLY if we aren't already flushing
+        if (!isFlushing) {
+          let isSequenceFinished = false;
+          if (window.isAnimationLoopComplete) {
+            if (window.exportTotalDuration) {
+              const gifFrames = Math.round(window.exportTotalDuration * 30);
+              if (frameCount > 0 && frameCount % gifFrames === 0)
+                isSequenceFinished = true;
+            } else {
               isSequenceFinished = true;
-          } else {
-            isSequenceFinished = true;
+            }
+          }
+
+          if (isSequenceFinished) {
+            isFlushing = true;
           }
         }
 
-        if (isSequenceFinished) {
-          recorder.stop();
-        } else {
-          // Micro-delay gives MediaRecorder room to breathe without choking the event loop
-          setTimeout(recordNextFrame, 10);
+        // 4. Handle Termination or Continuation
+        if (isFlushing) {
+          // Once we have fed 2 extra lookahead frames into the encoder,
+          // our perfect target frame is guaranteed to have cleared the pipeline.
+          if (flushFrames >= 2) {
+            recorder.stop();
+            return; // Terminate execution immediately
+          }
+          flushFrames++;
         }
+
+        // 5. Advance time and update coordinates for the next frame pass
+        simulatedTime += 1000 / 30;
+
+        const callbacksToRun = [...rafCallbacks];
+        rafCallbacks = [];
+        callbacksToRun.forEach((cb) => cb(simulatedTime));
+
+        setTimeout(recordNextFrame, 10);
       };
 
-      // Kickoff native recording loop
       setTimeout(recordNextFrame, 100);
     } else {
       // =========================================================
-      // FFMPEG FALLBACK FOR MP4 / MOV ONLY
+      // FFmpeg FALLBACK FOR MP4 / MOV
       // =========================================================
       console.log(
         `--- FFmpeg Direct-${format.toUpperCase()} Engine Initialized ---`,
@@ -575,12 +594,7 @@ export function exportVideo(
       const extension = bgColor ? "jpg" : "png";
 
       const captureNextFrame = async () => {
-        simulatedTime += 1000 / 30;
-
-        const callbacksToRun = [...rafCallbacks];
-        rafCallbacks = [];
-        callbacksToRun.forEach((cb) => cb(simulatedTime));
-
+        // 1. Render current state
         if (composer) {
           composer.render();
         } else {
@@ -590,11 +604,12 @@ export function exportVideo(
         const swalText = document.querySelector(".swal2-html-container");
         if (swalText) swalText.innerText = `Capturing frame ${frameCount}...`;
 
+        // 2. Save current pixels
         const frameBlob = await new Promise((res) => {
           canvas.toBlob(
             res,
             captureMimeType,
-            captureMimeType === "image/jpeg" ? 1 : undefined,
+            captureMimeType === "image/jpeg" ? 0.85 : undefined,
           );
         });
 
@@ -602,15 +617,23 @@ export function exportVideo(
         await ffmpeg.writeFile(frameName, await fetchFile(frameBlob));
         frameCount++;
 
+        // 3. Evaluate completion
         let isSequenceFinished = false;
         if (window.isAnimationLoopComplete) {
-          isSequenceFinished = true; // MP4 loops don't require the custom GIF modulo padding
+          isSequenceFinished = true;
         }
 
         if (isSequenceFinished) {
           if (swalText) swalText.innerText = `Compiling video...`;
           compileVideoAndResolve();
         } else {
+          // 4. Advance clock for next frames
+          simulatedTime += 1000 / 30;
+
+          const callbacksToRun = [...rafCallbacks];
+          rafCallbacks = [];
+          callbacksToRun.forEach((cb) => cb(simulatedTime));
+
           setTimeout(captureNextFrame, 0);
         }
       };
@@ -677,7 +700,6 @@ export function exportVideo(
       setTimeout(captureNextFrame, 100);
     }
 
-    // --- REUSABLE SYSTEM RESTORATION ---
     function cleanupWorld() {
       window.performance.now = originalPerfNow;
       window.Date.now = originalDateNow;

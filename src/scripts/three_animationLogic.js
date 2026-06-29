@@ -104,6 +104,13 @@ export const handleAnimationSwitch = (requestedType, forceRestart = false) => {
 
   if (cachedControls) {
     cachedControls.autoRotate = false;
+
+    const wasDampingEnabled = cachedControls.enableDamping;
+    cachedControls.enableDamping = false;
+
+    cachedControls.update();
+
+    cachedControls.enableDamping = wasDampingEnabled;
   }
 
   resetMeshTransforms();
@@ -111,13 +118,17 @@ export const handleAnimationSwitch = (requestedType, forceRestart = false) => {
 };
 
 export const handleFocusToggle = () => {
-  activeType = null; // Disables active animations
+  activeType = null;
   isPaused = true;
   time = 0;
 
   if (typeof resetCameraView === "function") resetCameraView();
   if (cachedControls) {
     cachedControls.autoRotate = false;
+    const wasDampingEnabled = cachedControls.enableDamping;
+    cachedControls.enableDamping = false;
+    cachedControls.update();
+    cachedControls.enableDamping = wasDampingEnabled;
   }
 
   resetMeshTransforms();
@@ -142,8 +153,8 @@ export const updateCameraAnimation = (controls) => {
     }
   }
 
+  // If paused or no active animation type, exit immediately with zero side-effects
   if (isPaused || !activeType) {
-    if (controls) controls.autoRotate = false;
     return;
   }
 
@@ -155,11 +166,6 @@ export const updateCameraAnimation = (controls) => {
     });
   }
   const isTransitioning = targetMesh && targetMesh.userData.isTransitioning;
-
-  // Global override for cases that shouldn't auto-rotate by default
-  if (activeType !== "default") {
-    controls.autoRotate = false;
-  }
 
   switch (activeType) {
     case "scramble": {
@@ -598,9 +604,7 @@ export const updateCameraAnimation = (controls) => {
     }
 
     case "default":
-    default: {
       if (isTransitioning && targetMesh) {
-        controls.autoRotate = false;
         const transitionFrames = 120;
         time += 1;
         const progress = Math.min(time / transitionFrames, 1.0);
@@ -658,7 +662,6 @@ export const updateCameraAnimation = (controls) => {
           window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
       } else {
         if (window.isExportingLoop) {
-          controls.autoRotate = false;
           if (window.exportRotatedAccumulator === undefined)
             window.exportRotatedAccumulator = 0;
           if (!window.isAnimationLoopComplete) {
@@ -677,12 +680,11 @@ export const updateCameraAnimation = (controls) => {
             controls.rotateLeft(deltaToRotate);
           }
         } else {
-          controls.autoRotate = true;
-          controls.autoRotateSpeed = 5.0;
+          // Unified standard: Manual incremental frame tracking instead of implicit autoRotate triggers
+          controls.rotateLeft(0.00873);
         }
       }
       break;
-    }
   }
 };
 

@@ -102,10 +102,6 @@ export const initThree = (canvasId, initialGridScale) => {
   // Controls Setup (Pan/zoom/rotate with smooth damping)
   controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(config.target.x, config.target.y, config.target.z);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.5;
-  controls.autoRotate = true;
-  controls.autoRotateSpeed = 5.0;
   controls.saveState();
 
   // Material Setup (Single material shared across all instanced dots)
