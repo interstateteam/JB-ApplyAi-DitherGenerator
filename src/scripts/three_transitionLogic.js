@@ -3,6 +3,9 @@ import {
   handleAnimationSwitch,
   resetAnimationTimeline,
 } from "./three_animationLogic.js";
+import { getActiveMesh } from "./three_gridLogic.js";
+
+// === STATE ===
 
 export let pendingTransitionAnimation = "breakApart";
 export let lastTransitionBackup = null;
@@ -12,7 +15,11 @@ export const setPendingTransition = (animName) => {
   pendingTransitionAnimation = animName;
 };
 
-// 1. Instantly clones the current frame before the next image writes over it
+// === TRANSITION PIPELINE ===
+
+/**
+ * Creates a backup clone of the current frame data before loading a new sequence.
+ */
 export const snapshotOldState = (
   scene,
   isPlayingGif,
@@ -21,10 +28,7 @@ export const snapshotOldState = (
   currentGifRows,
   currentFrameIndex,
 ) => {
-  let targetMesh = null;
-  scene.traverse((child) => {
-    if (child.isInstancedMesh) targetMesh = child;
-  });
+  const targetMesh = getActiveMesh();
 
   const prevPositions = targetMesh
     ? targetMesh.userData.originalPositions.map((v) => v.clone())
@@ -33,7 +37,6 @@ export const snapshotOldState = (
   const prevRotations = targetMesh
     ? targetMesh.userData.originalRotations.map((q) => q.clone())
     : [];
-
   const hasSourceGif = isPlayingGif && currentGifFrames.length > 0;
 
   lastTransitionBackup = {
@@ -53,7 +56,6 @@ export const snapshotOldState = (
 
   lastTransitionAnimName = pendingTransitionAnimation;
 
-  // Returns the backup profile (or null) to feed back into the videoLogic engine
   if (hasSourceGif) {
     return {
       frames: [...currentGifFrames],
@@ -66,16 +68,14 @@ export const snapshotOldState = (
   return null;
 };
 
-// 2. Safely truncates or pads the arrays to perfectly fit the new grid dimensions
+/**
+ * Standardizes the cloned transition arrays to ensure they perfectly match the target grid dimensions.
+ */
 export const finalizeMorphState = (scene, controls) => {
-  let targetMesh = null;
-  scene.traverse((child) => {
-    if (child.isInstancedMesh) targetMesh = child;
-  });
+  const targetMesh = getActiveMesh();
 
   if (targetMesh && lastTransitionBackup) {
     const count = targetMesh.count;
-
     let safePos = lastTransitionBackup.positions
       .map((v) => v.clone())
       .slice(0, count);

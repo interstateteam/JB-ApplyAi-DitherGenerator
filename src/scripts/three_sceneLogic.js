@@ -1,23 +1,24 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { createPostProcessor } from "./thee_styleLogic.js";
 import { updateCameraAnimation } from "./three_animationLogic.js";
 import { getResponsiveZoom } from "./three_gridLogic.js";
 
-// --- Global State Exports ---
+// === GLOBAL STATE ===
+
 export let scene, camera, renderer, controls, material;
 export let pauseControl = false;
 export let dynamicZoom = 1;
 export let composer = null;
 
-// --- Core Functions ---
+// === CAMERA LOGIC ===
 
+/**
+ * Generates the initial camera configuration object.
+ */
 export const getCameraSetup = (initialGridScale) => {
-  // Fetch the correct zoom right at startup
   const initialZoom = initialGridScale
     ? getResponsiveZoom(initialGridScale)
     : 1;
-
   return {
     position: { x: 0, y: 0, z: 1000 },
     target: { x: 0, y: 0, z: 0 },
@@ -25,17 +26,21 @@ export const getCameraSetup = (initialGridScale) => {
   };
 };
 
+/**
+ * Updates the camera's zoom level dynamically.
+ */
 export const setCameraZoom = (zoomLevel) => {
   dynamicZoom = zoomLevel;
   if (camera) {
     camera.zoom = dynamicZoom;
     camera.updateProjectionMatrix();
-
     if (controls) controls.saveState();
   }
 };
 
-// Toggles the auto-rotation of the scene
+/**
+ * Toggles auto-rotation on the scene controls.
+ */
 export const setPauseControl = (value) => {
   pauseControl = value;
   if (controls) {
@@ -43,15 +48,18 @@ export const setPauseControl = (value) => {
   }
 };
 
-// Sets the camera clipping distance based on the slider value
+/**
+ * Adjusts the far clipping plane of the camera.
+ */
 export const setCameraClipping = (distance) => {
   if (!camera) return;
-
   camera.far = distance;
   camera.updateProjectionMatrix();
 };
 
-// Resets the camera to its initial state and pauses rotation
+/**
+ * Resets the camera to its cached original orientation and zoom.
+ */
 export const resetCameraView = () => {
   if (!camera || !controls) return;
   controls.reset();
@@ -59,20 +67,21 @@ export const resetCameraView = () => {
   camera.updateProjectionMatrix();
 };
 
-// Initializes core Three.js components
+// === INITIALIZATION ===
+
+/**
+ * Bootstraps the Three.js scene, renderer, camera, and standard materials.
+ */
 export const initThree = (canvasId, initialGridScale) => {
   const htmlCanvas = document.getElementById(canvasId);
   if (!htmlCanvas) return;
 
   const config = getCameraSetup(initialGridScale);
+  const frustumScale = 1.25;
 
-  // Scene Setup
   scene = new THREE.Scene();
   scene.background = null;
 
-  const frustumScale = 1.25;
-
-  // Camera Setup
   camera = new THREE.OrthographicCamera(
     (window.innerWidth / -2) * frustumScale,
     (window.innerWidth / 2) * frustumScale,
@@ -84,58 +93,45 @@ export const initThree = (canvasId, initialGridScale) => {
 
   camera.position.set(config.position.x, config.position.y, config.position.z);
   camera.zoom = config.zoom;
-
   dynamicZoom = config.zoom;
-
   camera.updateProjectionMatrix();
 
-  // Renderer Setup
   renderer = new THREE.WebGLRenderer({
     canvas: htmlCanvas,
     antialias: true,
     alpha: true,
   });
+
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x000000, 0);
   renderer.setClearAlpha(0);
 
-  // Controls Setup (Pan/zoom/rotate with smooth damping)
   controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(config.target.x, config.target.y, config.target.z);
   controls.saveState();
 
-  // Material Setup (Single material shared across all instanced dots)
   material = new THREE.MeshBasicMaterial({});
   material.color.set("#222222");
 
-  // Post Processing Setup
-  // const composer = createPostProcessor(renderer, scene, camera);
-
-  // Animation Loop
   const animate = () => {
     requestAnimationFrame(animate);
-
     if (controls) {
       updateCameraAnimation(controls);
-
       controls.update();
     }
-
     renderer.render(scene, camera);
   };
+
   animate();
 
-  // Window Resize Handling
   window.addEventListener("resize", () => {
     const width = window.innerWidth;
     const height = window.innerHeight;
-
     camera.left = width / -2;
     camera.right = width / 2;
     camera.top = height / 2;
     camera.bottom = height / -2;
     camera.updateProjectionMatrix();
-
     renderer.setSize(width, height);
   });
 };

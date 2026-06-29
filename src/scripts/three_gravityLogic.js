@@ -1,8 +1,9 @@
 import { getPixelData } from "./three_imageLogic.js";
 
+// === PIXEL RESOLUTION ===
+
 /**
- * Evaluates whether a coordinate belongs to the image foreground, background,
- * or is an outer edge pixel directly wrapping the inner shape silhouette.
+ * Evaluates whether a coordinate belongs to the active image foreground or background.
  */
 export const getResolvedPixelData = (
   c,
@@ -18,7 +19,6 @@ export const getResolvedPixelData = (
   const innerC = c - 1;
   const innerR = r - 1;
 
-  // Helper to safely fetch raw image data or return empty background if out of bounds
   const getRaw = (cc, rr) => {
     if (
       cc < 0 ||
@@ -41,7 +41,6 @@ export const getResolvedPixelData = (
   };
 
   const self = getRaw(innerC, innerR);
-
   const selfIsBg = self.alpha <= 0.05;
 
   if (selfIsBg) {
@@ -52,23 +51,23 @@ export const getResolvedPixelData = (
       getRaw(innerC, innerR + 1),
     ];
 
-    // Identify real active shape pixels immediately next to this boundary coordinate
     const foregroundNeighbors = neighbors.filter((n) => n.alpha > 0.05);
 
     if (foregroundNeighbors.length > 0) {
       const avgBrightness =
         foregroundNeighbors.reduce((sum, n) => sum + n.brightness, 0) /
         foregroundNeighbors.length;
-
       return { brightness: avgBrightness, alpha: 1.0, isOutline: true };
     }
   }
 
   return { ...self, isOutline: false };
 };
+
+// === GRAVITY PHYSICS ===
+
 /**
- * Original gravity physics where heavy items stay static.
- * Now reads through the shape-resolved pixel interpreter.
+ * Determines positional shifts mimicking gravity based on surrounding pixel brightness constraints.
  */
 export const calculateOriginalGravityShift = (params) => {
   const {
@@ -103,7 +102,6 @@ export const calculateOriginalGravityShift = (params) => {
     if (!Object.values(neighbors).some((n) => n.alpha <= 0.01)) {
       const maxShift = spacing * 5.0;
       const subtleGravity = pixelGravity * 0.2;
-
       const rawShiftX = -(
         (neighbors.right.brightness - neighbors.left.brightness) *
         subtleGravity *
@@ -116,7 +114,6 @@ export const calculateOriginalGravityShift = (params) => {
         spacing *
         0.25
       );
-
       const alignmentFactor = document.getElementById("alignmentScale")
         ? alignmentScale / 100
         : 1.0;
@@ -135,10 +132,14 @@ export const calculateOriginalGravityShift = (params) => {
   return { shiftX, shiftY };
 };
 
+/**
+ * Calculates a dynamic overflow dot count based on darkness values.
+ */
 export const getExtraDotCount = (brightness, alpha, pixelGravity) => {
   if (alpha <= 0.05 || brightness > 0.75) return 0;
   const darkness = 1.0 - brightness;
   const maxExtraDots = 4;
   const gravityFactor = pixelGravity / 500;
+
   return Math.floor(Math.pow(darkness, 2) * maxExtraDots * gravityFactor);
 };

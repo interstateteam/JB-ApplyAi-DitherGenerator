@@ -9,24 +9,16 @@ import { scene, material, setCameraZoom } from "./three_sceneLogic.js";
 import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
 import logomarkUrl from "../assets/LogoMarkFull.svg";
 
+// === STATE ===
+
 const dummyObject = new THREE.Object3D();
 const colorHelper = new THREE.Color();
 
 let currentGeometry = null;
 let instancedMesh = null;
-
 let cachedLogomarkGeometry = null;
 
-export const getResponsiveZoom = (gridScale) => {
-  const currentWidth = window.innerWidth; // Or the width of your canvas container
-  const screenFactor = Math.min(currentWidth / 1920, 1);
-  return (1 / gridScale) * screenFactor;
-};
-
-export const handleGridScaleUpdate = (newGridScale) => {
-  const adjustedZoom = getResponsiveZoom(newGridScale);
-  setCameraZoom(adjustedZoom);
-};
+// === INITIALIZATION ===
 
 const initLogomarkGeometry = () => {
   const loader = new SVGLoader();
@@ -40,13 +32,10 @@ const initLogomarkGeometry = () => {
 
     const geometry = new THREE.ShapeGeometry(shapes);
     geometry.center();
-
-    // 1. Dynamically measure your specific SVG
     geometry.computeBoundingBox();
+
     const size = new THREE.Vector3();
     geometry.boundingBox.getSize(size);
-
-    // 2. Scale it perfectly to match the diameter of your pen dots (4.0)
     const scaleFactor = 4.0 / Math.max(size.x, size.y);
     geometry.scale(scaleFactor, -scaleFactor, scaleFactor);
 
@@ -55,8 +44,6 @@ const initLogomarkGeometry = () => {
 };
 
 initLogomarkGeometry();
-
-// --- Helper Functions ---
 
 const cleanup = () => {
   if (instancedMesh) {
@@ -82,15 +69,12 @@ const createWarpedGeometry = (chaosLevel, shapeType) => {
   } else if (shapeType === "torus") {
     geometry = new THREE.TorusGeometry(1.5, 0.6, 12, 24);
   } else {
-    // RESTORED: (2, 2) gives the noise function enough vertices to warp!
     geometry = new THREE.IcosahedronGeometry(2, 2);
   }
 
-  // Only warp 3D objects, leave the SVG pristine
   if (!isLogomark) {
     const pos = geometry.attributes.position;
     const vec = new THREE.Vector3();
-
     for (let i = 0; i < pos.count; i++) {
       vec.fromBufferAttribute(pos, i);
       const noise =
@@ -104,13 +88,33 @@ const createWarpedGeometry = (chaosLevel, shapeType) => {
   return geometry;
 };
 
-// Restored to 0.25 so the 0-1000 slider packs enough punch to move dots across columns
 const calculateShift = (grad, gravity, spacing, maxShift) => {
   const val = -grad * gravity * spacing * 0.25;
   return Math.max(-maxShift, Math.min(maxShift, val));
 };
 
-// --- Main Export ---
+// === GRID GENERATION ===
+
+/**
+ * Evaluates the required screen ratio to automatically adjust the orthographic zoom depth.
+ */
+export const getResponsiveZoom = (gridScale) => {
+  const currentWidth = window.innerWidth;
+  const screenFactor = Math.min(currentWidth / 1920, 1);
+  return (1 / gridScale) * screenFactor;
+};
+
+/**
+ * Forces a recalculation of the zoom scale.
+ */
+export const handleGridScaleUpdate = (newGridScale) => {
+  const adjustedZoom = getResponsiveZoom(newGridScale);
+  setCameraZoom(adjustedZoom);
+};
+
+/**
+ * Main routine for bootstrapping a clean instanced mesh representation of the canvas matrix.
+ */
 export const initThreeGrid = (imgWidth, imgHeight, settings) => {
   if (!scene) return null;
   cleanup();
@@ -118,35 +122,24 @@ export const initThreeGrid = (imgWidth, imgHeight, settings) => {
   material.side = THREE.DoubleSide;
   material.needsUpdate = true;
 
-  // Grab pixelShape from the settings object
   const { pixelAmount, pixelDistortion, gridScale, pixelShape } = settings;
   const chaosLevel = (pixelDistortion || 0) / 100;
   const shapeType = pixelShape || "icosahedron";
-
-  const maxCols = Math.floor(window.innerWidth / pixelAmount);
-  const maxRows = Math.floor(window.innerHeight / pixelAmount);
-  const imgAspect = imgWidth / imgHeight;
-  const screenAspect = window.innerWidth / window.innerHeight;
 
   if (settings && settings.gridScale) {
     const newZoom = getResponsiveZoom(settings.gridScale);
     setCameraZoom(newZoom);
   }
 
-  let cols, rows;
-  if (imgAspect > screenAspect) {
-    cols = maxCols;
-    rows = Math.floor(maxCols / imgAspect);
-  } else {
-    cols = Math.floor(maxRows * imgAspect);
-    rows = maxRows;
-  }
+  // REFACTORED: Utilizing the DRY helper function to calculate cols/rows
+  const { cols, rows } = getGridDimensions(
+    { width: imgWidth, height: imgHeight },
+    pixelAmount,
+  );
 
   if (cols * rows <= 0) return null;
 
-  // Pass shapeType here
   currentGeometry = createWarpedGeometry(chaosLevel, shapeType);
-
   instancedMesh = new THREE.InstancedMesh(
     currentGeometry,
     material,
@@ -159,6 +152,11 @@ export const initThreeGrid = (imgWidth, imgHeight, settings) => {
   return { cols, rows, instancedMesh };
 };
 
+// === UPDATES ===
+
+/**
+ * Reads sampled pixel data and applies localized spatial transformations to mesh instancing.
+ */
 export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
   if (!mesh) return;
 
@@ -171,14 +169,11 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
     scaleRatio,
     alignmentScale,
   } = settings;
-
   const chaosLevel = (pixelDistortion || 0) / 100;
   const gravityNorm = Math.max(0, Math.min(100, pixelGravity)) / 100;
   const spacing = pixelAmount * (gridScale / 5);
-
   const { minBright, maxBright } = imgData ? getBrightnessRange(imgData) : {};
 
-  // --- RESTORED: Coordinate Tracking Arrays for the Animation Loop ---
   const originalPositions = [];
   const gridPositions = [];
   const originalRotations = [];
@@ -211,6 +206,7 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
             minBright,
             maxBright,
           );
+
         const neighbors = {
           left: getSafe(col - 1, row),
           right: getSafe(col + 1, row),
@@ -258,7 +254,6 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
           (gridScale / 5) *
           sizeModifier *
           Math.max(0, fadeOutFactor);
-
       const wobble = 1.0 + THREE.MathUtils.randFloatSpread(0.5 * chaosLevel);
       const finalOriginalScale = baseScale * wobble;
 
@@ -268,10 +263,7 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
         (1.0 - brightness) * 1200 - 600,
       );
 
-      // Check if the current shape is the logomark
       const isLogomark = settings.pixelShape === "logomark";
-
-      // If logomark, keep rotation flat (0,0,0). Otherwise, spin randomly.
       const objRot = isLogomark
         ? new THREE.Euler(0, 0, 0)
         : new THREE.Euler(
@@ -280,20 +272,19 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
             Math.random() * Math.PI * 2,
           );
 
-      const spreadX = 1.6;
-      const spreadY = 1;
-      const spreadZ = 15;
+      const spreadX = 1.6,
+        spreadY = 1,
+        spreadZ = 15;
       const depthStep = ((col + row) % 8) - 4;
-
       const gPos = new THREE.Vector3(
         (col - (cols - 1) / 2) * spacing * spreadX,
         (row - (rows - 1) / 2) * spacing * spreadY,
         depthStep * spacing * spreadZ,
       );
+
       const gRot = new THREE.Euler(0, 0, 0);
       const finalGridScale = (pixelScale / 100) * (gridScale / 5) * 0.6;
 
-      // --- RESTORED: Pushing to tracking arrays ---
       originalPositions.push(objPos);
       gridPositions.push(gPos);
       originalRotations.push(new THREE.Quaternion().setFromEuler(objRot));
@@ -313,8 +304,6 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
     }
   }
 
-  // --- FIXED: Merge properties instead of replacing the entire object.
-  // This prevents the GIF loop from erasing the morph's 'prevPositions' memory! ---
   mesh.userData = mesh.userData || {};
   mesh.userData.originalPositions = originalPositions;
   mesh.userData.gridPositions = gridPositions;
@@ -328,7 +317,9 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
   mesh.instanceColor.needsUpdate = true;
 };
 
-// Keep backwards compatibility for your static image loader
+/**
+ * Standard trigger wrapper for applying an image instance to the view.
+ */
 export const updateThreeGrid = (img, settings) => {
   const { cols, rows, instancedMesh } =
     initThreeGrid(img.width, img.height, settings) || {};
@@ -337,36 +328,27 @@ export const updateThreeGrid = (img, settings) => {
   applyImageToGrid(imgData, cols, rows, settings, instancedMesh);
 };
 
+/**
+ * Extracts and holds dimensions for the incoming frame of a multi-part transition block.
+ */
 export const queueNextTransitionImage = (img, settings) => {
   if (!instancedMesh) return null;
 
-  const { pixelAmount } = settings;
-  // Use your current logic to calculate the columns and rows for this new image
-  const maxCols = Math.floor(window.innerWidth / pixelAmount);
-  const maxRows = Math.floor(window.innerHeight / pixelAmount);
-  const imgAspect = img.width / img.height;
-  const screenAspect = window.innerWidth / window.innerHeight;
+  const { pixelAmount, gridScale } = settings;
 
-  if (settings && settings.gridScale) {
-    const newZoom = getResponsiveZoom(settings.gridScale);
+  if (settings && gridScale) {
+    const newZoom = getResponsiveZoom(gridScale);
     setCameraZoom(newZoom);
   }
 
-  let cols, rows;
-  if (imgAspect > screenAspect) {
-    cols = maxCols;
-    rows = Math.floor(maxCols / imgAspect);
-  } else {
-    cols = Math.floor(maxRows * imgAspect);
-    rows = maxRows;
-  }
+  // REFACTORED: Utilizing the DRY helper function to calculate cols/rows
+  const { cols, rows } = getGridDimensions(img, pixelAmount);
 
   const nextImgData = sampleImage(img, cols, rows);
   const { minBright, maxBright } = nextImgData
     ? getBrightnessRange(nextImgData)
     : {};
 
-  // Store the secondary target target data inside the userData object
   instancedMesh.userData.nextImgData = nextImgData;
   instancedMesh.userData.nextMinBright = minBright;
   instancedMesh.userData.nextMaxBright = maxBright;
@@ -376,8 +358,6 @@ export const queueNextTransitionImage = (img, settings) => {
   return instancedMesh;
 };
 
-// Add a small helper function at the bottom to allow the animation loop to calculate
-// target positions on the fly for Image B mid-flight.
 export const getPixelDataDirect = (
   imgData,
   col,
@@ -389,3 +369,10 @@ export const getPixelDataDirect = (
 ) => {
   return getPixelData(imgData, col, row, cols, rows, minBright, maxBright);
 };
+
+// === GETTERS ===
+
+/**
+ * Returns the currently active instanced mesh without needing to traverse the scene.
+ */
+export const getActiveMesh = () => instancedMesh;

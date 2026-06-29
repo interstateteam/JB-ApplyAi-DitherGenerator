@@ -1,10 +1,10 @@
+// === IMPORTS ===
+
 import * as THREE from "three";
 import "./style.css";
-import logoUrl from "./assets/LogoMarkFull.svg";
 import {
   initThree,
   resetCameraView,
-  setCameraClipping,
   scene,
   renderer,
   camera,
@@ -15,6 +15,7 @@ import {
   initThreeGrid,
   applyImageToGrid,
   updateThreeGrid,
+  getActiveMesh,
 } from "./scripts/three_gridLogic.js";
 import {
   createIcons,
@@ -40,7 +41,6 @@ import {
   exportToJPG,
   convertToSVG,
 } from "./scripts/three_exportLogic.js";
-import Swal from "sweetalert2";
 import {
   loadImageAnimation,
   handleAnimationSwitch,
@@ -49,8 +49,6 @@ import {
   handleFocusToggle,
 } from "./scripts/three_animationLogic.js";
 import { sampleImage } from "./scripts/three_imageLogic.js";
-
-// --- NEW MODULE IMPORTS ---
 import {
   isPlayingGif,
   currentGifFrames,
@@ -67,7 +65,6 @@ import {
   playGifLoop,
   parseGifFile,
 } from "./scripts/three_videoLogic.js";
-
 import {
   pendingTransitionAnimation,
   lastTransitionBackup,
@@ -76,47 +73,21 @@ import {
   snapshotOldState,
   finalizeMorphState,
 } from "./scripts/three_transitionLogic.js";
+import {
+  showDelayedSpinner,
+  showLoadingAlert,
+  hideSpinner,
+  closeAlert,
+  showSuccessAlert,
+  showErrorAlert,
+  promptImageExportFormat,
+  promptVideoExportFormat,
+  triggerDownload,
+  changeColourBG,
+} from "./scripts/three_UiLogic.js";
 
-// --- Global UI Notifications Configuration ---
-const newSwal = Swal.mixin({
-  allowOutsideClick: true,
-  buttonsStyling: false,
-  reverseButtons: true,
-  imageUrl: logoUrl,
-  imageWidth: 28,
-  imageHeight: 28,
-  imageAlt: "Logo",
-  didOpen: () => {
-    const confirmBtn = Swal.getConfirmButton();
-    const cancelBtn = Swal.getCancelButton();
-    if (confirmBtn) confirmBtn.blur();
-    if (cancelBtn) cancelBtn.blur();
-    const input = Swal.getInput();
-    if (input) input.blur();
-  },
-  customClass: {
-    container: "cusSwal-Container",
-    popup: "cusSwal-popup",
-    title: "cusSwal-title",
-    htmlContainer: "cusSwal-text",
-    confirmButton: "cusSwal-button",
-    cancelButton: "cusSwal-button",
-    denyButton: "cusSwal-button",
-    image: "cusSwal-image", // RESTORED: Brings back the animation!
-  },
-});
+// === STATE & HELPERS ===
 
-function triggerDownload(url, filename, shouldRevoke = false) {
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  if (shouldRevoke) URL.revokeObjectURL(url);
-}
-
-// --- App State & Constants ---
 const scaleSliders = {
   pixelAmount: { min: 20, max: 4, action: "redraw" },
   pixelScale: { min: 50, max: 250, action: "redraw" },
@@ -129,24 +100,64 @@ const scaleSliders = {
 let currentImage = null;
 let currentActiveAnimation = "default";
 let currentMode = "AnimationMode";
+let cachedSettings = {};
 
-// --- Helpers ---
-const getSettings = () => {
-  const currentSettings = {};
+/**
+ * Reads the DOM once and updates the local cache.
+ */
+const updateSettingsCache = () => {
   for (const settingName in scaleSliders) {
     const range = scaleSliders[settingName];
     const slider = document.getElementById(settingName);
     const percentage = parseInt(slider?.value) || 0;
-    currentSettings[settingName] = Math.floor(
+    cachedSettings[settingName] = Math.floor(
       range.min + (percentage / 100) * (range.max - range.min),
     );
   }
-  currentSettings.pixelDistortion = 25;
+  cachedSettings.pixelDistortion = 25;
   const shapeSelect = document.getElementById("pixelShape");
-  currentSettings.pixelShape = shapeSelect ? shapeSelect.value : "icosahedron";
-  return currentSettings;
+  cachedSettings.pixelShape = shapeSelect ? shapeSelect.value : "icosahedron";
 };
 
+const getSettings = () => cachedSettings;
+
+/**
+ * Single source of truth for processing raw GIF frames through a temporary canvas.
+ */
+const processGifFrames = (frames, cols, rows) => {
+  return frames.map((frame) => {
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = frame.imageData.width;
+    tempCanvas.height = frame.imageData.height;
+    tempCanvas.getContext("2d").putImageData(frame.imageData, 0, 0);
+    return {
+      ...frame,
+      imageData: sampleImage(tempCanvas, cols, rows),
+    };
+  });
+};
+
+/**
+ * Boilerplate for booting up the GIF player loop
+ */
+const startGifPlayback = (frames, setup) => {
+  setCurrentGifState(frames, setup.cols, setup.rows, setup.instancedMesh);
+  currentImage = null;
+  applyImageToGrid(
+    frames[0].imageData,
+    setup.cols,
+    setup.rows,
+    getSettings(),
+    setup.instancedMesh,
+  );
+  setIsPlayingGif(true);
+  setLastFrameTime(performance.now());
+  playGifLoop(performance.now(), scene, getSettings);
+};
+
+/**
+ * Central event wrapper for re-rendering grid topologies after a configuration change.
+ */
 const redraw = () => {
   if (isPlayingGif && currentGifFrames.length > 0) {
     stopGifPlayback();
@@ -155,32 +166,23 @@ const redraw = () => {
       currentGifFrames[0].imageData.height,
       getSettings(),
     );
+
     if (setup) {
-      const processedFrames = currentGifFrames.map((f) => {
-        const tempCanvas = document.createElement("canvas");
-        tempCanvas.width = f.imageData.width;
-        tempCanvas.height = f.imageData.height;
-        tempCanvas.getContext("2d").putImageData(f.imageData, 0, 0);
-        return {
-          ...f,
-          imageData: sampleImage(tempCanvas, setup.cols, setup.rows),
-        };
-      });
-      setCurrentGifState(
-        processedFrames,
+      const processedFrames = processGifFrames(
+        currentGifFrames,
         setup.cols,
         setup.rows,
-        setup.instancedMesh,
       );
-      setIsPlayingGif(true);
-      setLastFrameTime(performance.now());
-      playGifLoop(performance.now(), scene, getSettings);
+      startGifPlayback(processedFrames, setup);
     }
   } else if (currentImage) {
     updateThreeGrid(currentImage, getSettings());
   }
 };
 
+/**
+ * Reads image source data synchronously into the context.
+ */
 const loadImage = (imageSource) => {
   const temporaryImage = new Image();
   temporaryImage.onload = () => {
@@ -190,41 +192,15 @@ const loadImage = (imageSource) => {
   temporaryImage.src = imageSource;
 };
 
-export function changeColourBG(selectedOption) {
-  const currentBg = document.querySelector(".cus-bgColour");
-  const pageDeco = document.querySelectorAll(".cus-pageDeco");
-  if (!currentBg) return selectedOption;
+// === INITIALIZATION & EVENTS ===
 
-  currentBg.classList.remove(
-    "bg-ApplyMaroon",
-    "bg-ApplyDark",
-    "bg-ApplyWhite",
-    "bg-ApplyOrange",
-    "border-2",
-    "border-ApplyWhite",
-  );
-
-  if (selectedOption === "ColourMaroon") {
-    pageDeco.forEach((el) => el.classList.add("hidden"));
-    currentBg.classList.add("bg-ApplyMaroon");
-  } else if (selectedOption === "ColourBlack") {
-    currentBg.classList.add("border-2", "border-ApplyWhite", "bg-ApplyDark");
-  } else if (selectedOption === "ColourWhite") {
-    currentBg.classList.add("bg-ApplyWhite");
-  } else {
-    currentBg.classList.add("bg-ApplyOrange");
-  }
-  return selectedOption;
-}
-
-// --- Initialization & Event Binding ---
 window.addEventListener("load", () => {
+  updateSettingsCache();
+
   const startingSettings = getSettings();
-
-  // Pass the starting gridScale into initThree
   initThree("canvas", startingSettings.gridScale);
-
   const currentBgColor = document.getElementById("cus-bgChoice");
+
   const applyVisualChanges = () => {
     changeColourBG(currentBgColor.value);
     if (material) {
@@ -243,10 +219,7 @@ window.addEventListener("load", () => {
   });
 
   const isMorphActive = () => {
-    let targetMesh = null;
-    scene.traverse((child) => {
-      if (child.isInstancedMesh) targetMesh = child;
-    });
+    const targetMesh = getActiveMesh();
     return targetMesh && targetMesh.userData.isTransitioning;
   };
 
@@ -263,8 +236,6 @@ window.addEventListener("load", () => {
 
   document.getElementById("focusCamera").addEventListener("click", () => {
     if (isMorphActive()) return;
-
-    // This stops the animation, clears OrbitControls, resets the camera, and snaps the grid
     handleFocusToggle();
   });
 
@@ -277,16 +248,13 @@ window.addEventListener("load", () => {
   document
     .getElementById("breakApartAnimation")
     .addEventListener("click", () => handleAnimButtonClick("breakApart"));
-
   document
     .getElementById("implodeAnimation")
     .addEventListener("click", () => handleAnimButtonClick("implode"));
-
   document
     .getElementById("scrambleAnimation")
     .addEventListener("click", () => handleAnimButtonClick("scramble"));
 
-  // --- File Uploads ---
   document.getElementById("pickImage").addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -294,14 +262,7 @@ window.addEventListener("load", () => {
     stopGifPlayback();
 
     if (file.type === "image/gif") {
-      const loadingTimer = setTimeout(() => {
-        newSwal.fire({
-          title: "Parsing GIF...",
-          text: "Large file detected, just a moment!",
-          allowOutsideClick: false,
-          didOpen: () => Swal.showLoading(),
-        });
-      }, 2000);
+      showDelayedSpinner();
 
       try {
         const parsedGif = await parseGifFile(file);
@@ -312,43 +273,17 @@ window.addEventListener("load", () => {
         );
         if (!setup) throw new Error("Could not initialize grid.");
 
-        const processedFrames = parsedGif.frames.map((frame) => {
-          const tempCanvas = document.createElement("canvas");
-          tempCanvas.width = parsedGif.width;
-          tempCanvas.height = parsedGif.height;
-          tempCanvas.getContext("2d").putImageData(frame.imageData, 0, 0);
-          return {
-            imageData: sampleImage(tempCanvas, setup.cols, setup.rows),
-            delay: frame.delay,
-          };
-        });
-
-        setCurrentGifState(
-          processedFrames,
+        const processedFrames = processGifFrames(
+          parsedGif.frames,
           setup.cols,
           setup.rows,
-          setup.instancedMesh,
-        );
-        currentImage = null;
-
-        // Pre-load frame 0 synchronously
-        applyImageToGrid(
-          processedFrames[0].imageData,
-          setup.cols,
-          setup.rows,
-          getSettings(),
-          setup.instancedMesh,
         );
 
-        setIsPlayingGif(true);
-        setLastFrameTime(performance.now());
-        playGifLoop(performance.now(), scene, getSettings);
-
-        clearTimeout(loadingTimer);
-        if (Swal.isVisible()) Swal.close();
+        startGifPlayback(processedFrames, setup);
+        hideSpinner();
       } catch (err) {
-        clearTimeout(loadingTimer);
-        Swal.fire("Error", "Failed to parse GIF", "error");
+        hideSpinner();
+        showErrorAlert("Error", "Failed to parse GIF");
       }
     } else {
       setCurrentGifState([], 0, 0, null);
@@ -374,7 +309,7 @@ window.addEventListener("load", () => {
         if (backup) {
           setSourceGifBackup(backup);
         } else {
-          setSourceGifBackup(null); // Explicit garbage collection!
+          setSourceGifBackup(null);
         }
         stopGifPlayback();
       };
@@ -388,18 +323,10 @@ window.addEventListener("load", () => {
       };
 
       if (file.type === "image/gif") {
-        const loadingTimer = setTimeout(() => {
-          newSwal.fire({
-            title: "Parsing GIF...",
-            text: "Large file detected, just a moment!",
-            allowOutsideClick: false,
-            didOpen: () => Swal.showLoading(),
-          });
-        }, 2000);
+        showDelayedSpinner();
 
         try {
           const parsedGif = await parseGifFile(file);
-
           executeSnapshotAndStop();
 
           const setup = initThreeGrid(
@@ -407,36 +334,18 @@ window.addEventListener("load", () => {
             parsedGif.height,
             getSettings(),
           );
-          const processedFrames = parsedGif.frames.map((frame) => {
-            const tempCanvas = document.createElement("canvas");
-            tempCanvas.width = parsedGif.width;
-            tempCanvas.height = parsedGif.height;
-            tempCanvas.getContext("2d").putImageData(frame.imageData, 0, 0);
-            return {
-              imageData: sampleImage(tempCanvas, setup.cols, setup.rows),
-              delay: frame.delay,
-            };
-          });
-
-          setCurrentGifState(
-            processedFrames,
+          const processedFrames = processGifFrames(
+            parsedGif.frames,
             setup.cols,
             setup.rows,
-            setup.instancedMesh,
           );
-          currentImage = null;
 
+          startGifPlayback(processedFrames, setup);
           triggerMorph();
-
-          setIsPlayingGif(true);
-          setLastFrameTime(performance.now());
-          playGifLoop(performance.now(), scene, getSettings);
-
-          clearTimeout(loadingTimer);
-          if (Swal.isVisible()) Swal.close();
+          hideSpinner();
         } catch (err) {
-          clearTimeout(loadingTimer);
-          Swal.fire("Error", "Failed to parse GIF", "error");
+          hideSpinner();
+          showErrorAlert("Error", "Failed to parse GIF");
         }
       } else {
         const reader = new FileReader();
@@ -457,47 +366,36 @@ window.addEventListener("load", () => {
     });
 
   window.addEventListener("gifTransitionComplete", () => {
-    let targetMesh = null;
-    scene.traverse((child) => {
-      if (child.isInstancedMesh) targetMesh = child;
-    });
-
+    const targetMesh = getActiveMesh();
     if (targetMesh && targetMesh.userData.isTransitioning) {
       delete targetMesh.userData.isTransitioning;
       delete targetMesh.userData.prevPositions;
       delete targetMesh.userData.prevScales;
       delete targetMesh.userData.prevRotations;
-
       delete targetMesh.userData.freezeBackground;
-
-      setSourceGifBackup(null); // Explicit garbage collection!
+      setSourceGifBackup(null);
     }
   });
 
-  // --- Exports ---
   document.getElementById("export3D").addEventListener("click", async (e) => {
     if (e) e.preventDefault();
-    newSwal.fire({
-      title: "Exporting 3D Model",
-      text: "Packaging 3D assets and geometry. Please wait...",
-      allowOutsideClick: false,
-      didOpen: () => Swal.showLoading(),
-    });
+    showLoadingAlert(
+      "Exporting 3D Model",
+      "Packaging 3D assets and geometry. Please wait...",
+    );
+
     await new Promise((resolve) => setTimeout(resolve, 100));
     let modelUrl = null;
+
     try {
-      const gltfData = await export3D(scene);
+      const gltfData = await export3D();
       const blob = new Blob([gltfData], { type: "model/gltf-binary" });
       modelUrl = URL.createObjectURL(blob);
-      newSwal.fire({
-        title: "Finished",
-        text: "Your 3D model is ready.",
-        timer: 4000,
-        showConfirmButton: false,
-      });
+
+      showSuccessAlert("Finished", "Your 3D model is ready.");
       triggerDownload(modelUrl, "ApplyAi_3DModel.glb", true);
     } catch (error) {
-      Swal.fire("Error", "3D Export failed: " + error.message, "error");
+      showErrorAlert("Error", "3D Export failed: " + error.message);
     } finally {
       if (modelUrl) URL.revokeObjectURL(modelUrl);
     }
@@ -507,57 +405,27 @@ window.addEventListener("load", () => {
     .getElementById("exportPhoto")
     .addEventListener("click", async (e) => {
       e.preventDefault();
-      const result = await newSwal.fire({
-        title: "Image Export",
-        text: "Please choose a format.",
-        showDenyButton: true,
-        showCancelButton: true,
-        confirmButtonText: ".svg",
-        denyButtonText: ".png",
-        cancelButtonText: ".jpg",
-      });
-      if (
-        result.dismiss === Swal.DismissReason.backdrop ||
-        result.dismiss === Swal.DismissReason.esc
-      )
-        return;
+      const result = await promptImageExportFormat();
+
+      // Swal dismissal checks use specific properties on the result object
+      if (result.dismiss) return;
+
       let svgUrl = null;
       try {
         if (result.isConfirmed) {
-          newSwal.fire({
-            title: "Generating SVG",
-            text: "Converting 3D to 2D...",
-            allowOutsideClick: false,
-            didOpen: () => Swal.showLoading(),
-          });
+          showLoadingAlert("Generating SVG", "Converting 3D to 2D...");
           await new Promise((resolve) => setTimeout(resolve, 100));
-          svgUrl = await convertToSVG(scene, camera);
-          newSwal.fire({
-            title: "Finished",
-            text: "Vector graphic asset is ready.",
-            timer: 4000,
-            showConfirmButton: false,
-          });
+
+          svgUrl = await convertToSVG();
+          showSuccessAlert("Finished", "Vector graphic asset is ready.");
           triggerDownload(svgUrl, "ApplyAi_DitheredVector.svg", true);
         } else if (result.isDenied) {
-          triggerDownload(
-            exportToPNG(scene, renderer, camera),
-            "ApplyAi_DitheredSnapshot.png",
-            false,
-          );
-        } else if (result.dismiss === Swal.DismissReason.cancel) {
-          triggerDownload(
-            exportToJPG(scene, renderer, camera),
-            "ApplyAi_DitheredSnapshot.jpg",
-            false,
-          );
+          triggerDownload(exportToPNG(), "ApplyAi_DitheredSnapshot.png", false);
+        } else if (result.dismiss === "cancel") {
+          triggerDownload(exportToJPG(), "ApplyAi_DitheredSnapshot.jpg", false);
         }
       } catch (error) {
-        Swal.fire(
-          "Error",
-          "Image generation failed: " + error.message,
-          "error",
-        );
+        showErrorAlert("Error", "Image generation failed: " + error.message);
       } finally {
         if (svgUrl) URL.revokeObjectURL(svgUrl);
       }
@@ -567,33 +435,12 @@ window.addEventListener("load", () => {
     .getElementById("exportVideo")
     .addEventListener("click", async (e) => {
       if (e) e.preventDefault();
+      const result = await promptVideoExportFormat();
 
-      // 1. Cleaned up SweetAlert (No more number input!)
-      const result = await newSwal.fire({
-        title: "Video Export",
-        text: "Select a file format to render your animation loop.",
-        showDenyButton: true,
-        showCancelButton: true,
-        confirmButtonText: ".mov",
-        denyButtonText: ".mp4",
-        cancelButtonText: ".webm",
-      });
+      if (result.dismiss) return;
 
-      if (
-        result.dismiss === Swal.DismissReason.backdrop ||
-        result.dismiss === Swal.DismissReason.esc
-      )
-        return;
-
-      // 2. Hardcode duration to "auto" so it ALWAYS records the perfect loop
       let duration = "auto";
-
-      newSwal.fire({
-        title: "Exporting",
-        allowOutsideClick: false,
-        text: "Recording seamless sequence...",
-        didOpen: () => Swal.showLoading(),
-      });
+      showLoadingAlert("Exporting", "Recording seamless sequence...");
 
       await new Promise((resolve) => setTimeout(resolve, 100));
       let downloadUrl = null;
@@ -614,25 +461,19 @@ window.addEventListener("load", () => {
         }
 
         const videoBlob = await exportVideo(
-          renderer,
-          scene,
-          camera,
           duration,
           targetFormat,
           chosenBgColor,
           () => {
             window.isExportingLoop = true;
-            let targetMesh = null;
-            scene.traverse((child) => {
-              if (child.isInstancedMesh) targetMesh = child;
-            });
+            const targetMesh = getActiveMesh();
 
             const isReplayingTransition =
               targetMesh &&
               lastTransitionBackup &&
               currentActiveAnimation === lastTransitionAnimName;
-
             let gifDurationSeconds = 0;
+
             if (currentGifFrames && currentGifFrames.length > 0) {
               gifDurationSeconds =
                 currentGifFrames.reduce((sum, frame) => sum + frame.delay, 0) /
@@ -651,7 +492,6 @@ window.addEventListener("load", () => {
                 getSettings(),
                 currentGifMesh,
               );
-
               if (!isPlayingGif) {
                 setIsPlayingGif(true);
                 playGifLoop(window.performance.now(), scene, getSettings);
@@ -683,7 +523,6 @@ window.addEventListener("load", () => {
                 targetMesh.userData.prevRotations = safeRot;
                 targetMesh.userData.isTransitioning = true;
 
-                // Note: Mutating originalPositions here was deleted to prevent the cache override glitch!
                 if (typeof resetAnimationTimeline === "function")
                   resetAnimationTimeline(controls);
               }
@@ -691,10 +530,8 @@ window.addEventListener("load", () => {
               window.exportTargetDuration = undefined;
 
               if (gifDurationSeconds > 0) {
-                // We only track duration if a GIF is present, so we don't cut its playback mid-loop
                 window.exportTotalDuration = gifDurationSeconds;
               } else {
-                // No GIF? Remove the duration cap entirely. The engine dictates the length.
                 window.exportTotalDuration = undefined;
               }
 
@@ -705,9 +542,8 @@ window.addEventListener("load", () => {
           },
         );
 
-        Swal.close();
+        closeAlert();
 
-        // RESTORED: Spinner Logic
         if (targetFormat === "mov" || targetFormat === "mp4") {
           const spinner = document.getElementById("exportSpinner");
           if (spinner) spinner.classList.remove("hidden");
@@ -716,26 +552,18 @@ window.addEventListener("load", () => {
         downloadUrl = URL.createObjectURL(videoBlob);
         fileName = `ApplyAi_Render.${targetFormat}`;
 
-        newSwal.fire({
-          title: "Finished Rendering",
-          text: `${fileName} is ready.`, // RESTORED
-          timer: 4000,
-          showConfirmButton: false,
-        });
-
+        showSuccessAlert("Finished Rendering", `${fileName} is ready.`);
         triggerDownload(downloadUrl, fileName, targetFormat === "webm");
       } catch (error) {
         const errorMsg =
           error?.message ||
           error ||
           "Web Worker crashed (Likely Out of Memory)";
-        Swal.fire("Error", "Export failed: " + errorMsg, "error");
+        showErrorAlert("Error", "Export failed: " + errorMsg);
       } finally {
-        // RESTORED: Spinner Hide and URL Revoke Logic
         const spinner = document.getElementById("exportSpinner");
         if (spinner) spinner.classList.add("hidden");
         window.isExportingLoop = false;
-
         window.exportRotatedAccumulator = undefined;
         window.exportTargetDuration = undefined;
         window.exportTotalDuration = undefined;
@@ -745,10 +573,7 @@ window.addEventListener("load", () => {
           typeof downloadUrl === "string" &&
           downloadUrl.startsWith("blob:")
         ) {
-          const urlToRevoke = downloadUrl;
-          setTimeout(() => {
-            URL.revokeObjectURL(urlToRevoke);
-          }, 2000);
+          setTimeout(() => URL.revokeObjectURL(downloadUrl), 2000);
         }
       }
     });
@@ -766,16 +591,24 @@ window.addEventListener("load", () => {
         ? "opacity-100 transition-all duration-200"
         : "opacity-0 transition-all duration-200";
   };
+
   document
     .querySelector(".slider-container")
     ?.addEventListener("scroll", checkScrollStatus);
   window.addEventListener("resize", checkScrollStatus);
   setTimeout(checkScrollStatus, 200);
 
-  Object.keys(scaleSliders).forEach((id) =>
-    document.getElementById(id)?.addEventListener("input", redraw),
-  );
-  document.getElementById("pixelShape")?.addEventListener("change", redraw);
+  Object.keys(scaleSliders).forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      updateSettingsCache();
+      redraw();
+    });
+  });
+
+  document.getElementById("pixelShape")?.addEventListener("change", () => {
+    updateSettingsCache();
+    redraw();
+  });
 
   const defaultImageEl = document.getElementById("defaultImage");
   if (defaultImageEl?.src) loadImage(defaultImageEl.src);

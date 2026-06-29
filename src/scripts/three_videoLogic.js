@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import { parseGIF, decompressFrames } from "gifuct-js";
-import { applyImageToGrid } from "./three_gridLogic.js";
+import { applyImageToGrid, getActiveMesh } from "./three_gridLogic.js";
 
-// --- GIF Playback State ---
+// === STATE ===
+
 export let isPlayingGif = false;
 export let currentGifFrames = [];
 export let currentGifCols = 0;
@@ -13,12 +14,16 @@ export let lastFrameTime = 0;
 export let gifAnimationId = null;
 export let sourceGifBackup = null;
 
-// --- State Setters (For main.js to use) ---
+// === STATE SETTERS ===
+
 export const setIsPlayingGif = (status) => {
   isPlayingGif = status;
 };
 export const setSourceGifBackup = (backup) => {
   sourceGifBackup = backup;
+};
+export const setLastFrameTime = (time) => {
+  lastFrameTime = time;
 };
 export const setCurrentGifState = (frames, cols, rows, mesh) => {
   currentGifFrames = frames;
@@ -27,11 +32,9 @@ export const setCurrentGifState = (frames, cols, rows, mesh) => {
   currentGifMesh = mesh;
   currentFrameIndex = 0;
 };
-export const setLastFrameTime = (time) => {
-  lastFrameTime = time;
-};
 
-// --- Global Mock Mesh (Prevents Memory Leaks) ---
+// === PLAYBACK ENGINE ===
+
 export const mockMesh = {
   userData: {},
   setColorAt: () => {},
@@ -40,29 +43,25 @@ export const mockMesh = {
   instanceColor: { needsUpdate: false },
 };
 
-// --- Playback Engine ---
+/**
+ * Halts ongoing GIF frame progression.
+ */
 export const stopGifPlayback = () => {
   isPlayingGif = false;
   if (gifAnimationId) cancelAnimationFrame(gifAnimationId);
 };
 
+/**
+ * Re-entrant animation loop for rendering chronological slices of GIF data.
+ */
 export const playGifLoop = (timestamp, scene, getSettingsFn) => {
-  let activeMesh = null;
-  if (scene) {
-    scene.traverse((child) => {
-      if (child.isInstancedMesh) activeMesh = child;
-    });
-  }
+  const activeMesh = getActiveMesh();
 
   const isMorphingAway =
     activeMesh && activeMesh.userData.isTransitioning && sourceGifBackup;
-
-  // Intercept the flag from the animation logic
   const isBackgroundFrozen = activeMesh && activeMesh.userData.freezeBackground;
-
   let loopActive = false;
 
-  // 1. Process Background Backup Loop (Skip completely if frozen!)
   if (isMorphingAway && !isBackgroundFrozen) {
     loopActive = true;
     const backup = sourceGifBackup;
@@ -76,7 +75,6 @@ export const playGifLoop = (timestamp, scene, getSettingsFn) => {
         getSettingsFn(),
         mockMesh,
       );
-
       const count = activeMesh.count;
       const freshData = mockMesh.userData;
       const prevPos = activeMesh.userData.prevPositions;
@@ -100,10 +98,10 @@ export const playGifLoop = (timestamp, scene, getSettingsFn) => {
     }
   }
 
-  // 2. Process Foreground Target Loop
   if (isPlayingGif && currentGifFrames.length > 0) {
     loopActive = true;
     const frame = currentGifFrames[currentFrameIndex];
+
     if (timestamp - lastFrameTime >= frame.delay) {
       applyImageToGrid(
         frame.imageData,
@@ -118,13 +116,16 @@ export const playGifLoop = (timestamp, scene, getSettingsFn) => {
   }
 
   if (!loopActive) return;
-
   gifAnimationId = requestAnimationFrame((t) =>
     playGifLoop(t, scene, getSettingsFn),
   );
 };
 
-// --- GIF Parsing Pipeline ---
+// === PARSING ===
+
+/**
+ * Unpacks an array buffer into contiguous 2D Canvas ImageData chunks.
+ */
 export const parseGifFile = async (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -144,6 +145,7 @@ export const parseGifFile = async (file) => {
 
         for (let i = 0; i < rawFrames.length; i++) {
           const frame = rawFrames[i];
+
           if (frame.disposalType === 2) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
           } else if (frame.disposalType === 3 && previousImageData) {
@@ -179,6 +181,7 @@ export const parseGifFile = async (file) => {
         reject(err);
       }
     };
+
     reader.onerror = reject;
     reader.readAsArrayBuffer(file);
   });

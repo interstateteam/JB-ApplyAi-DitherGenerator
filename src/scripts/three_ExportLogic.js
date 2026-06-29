@@ -1,19 +1,22 @@
 import * as THREE from "three";
-import { composer } from "./three_sceneLogic.js";
+import { scene, camera, renderer, composer } from "./three_sceneLogic.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile } from "@ffmpeg/util";
 import polygonClipping from "polygon-clipping";
+
+// === STATE ===
 
 const targetWidth = 2160;
 const targetHeight = 1440;
 
-// --- Export 3D Shape Logic ---
-export async function export3D(scene) {
+// === EXPORT 3D ===
+
+/**
+ * Exports the active instanced mesh to a GLTF binary format.
+ */
+export async function export3D() {
   return new Promise((resolve, reject) => {
     const exporter = new GLTFExporter();
     const exportGroup = new THREE.Group();
-
     exportGroup.scale.set(0.01, 0.01, 0.01);
 
     scene.traverse((object) => {
@@ -23,18 +26,14 @@ export async function export3D(scene) {
         const position = new THREE.Vector3();
         const quaternion = new THREE.Quaternion();
         const scale = new THREE.Vector3();
-
-        // Grab the VIP list from the mesh
         const activeInstances = object.userData.activeInstances;
 
         for (let i = 0; i < count; i++) {
-          // --- FIXED: Ignore physical size. If it's flagged as background (0), skip it immediately. ---
           if (activeInstances && activeInstances[i] === 0) continue;
 
           object.getMatrixAt(i, matrix);
           matrix.decompose(position, quaternion, scale);
 
-          // Fallback sanity check just to prevent absolute zeros from crashing math
           if (scale.x <= 0.0001) continue;
 
           const dummyMesh = new THREE.Mesh(object.geometry, object.material);
@@ -48,38 +47,39 @@ export async function export3D(scene) {
 
     exporter.parse(
       exportGroup,
-      (gltf) => {
-        resolve(gltf);
-      },
-      (error) => {
-        console.error("GLTF Export failed:", error);
-        reject(error);
-      },
+      (gltf) => resolve(gltf),
+      (error) => reject(error),
       { binary: true },
     );
   });
 }
 
-// --- Resolution Setup Helpers ---
-function setupExportResolution(
-  renderer,
-  activeCamera,
-  targetWidth,
-  targetHeight,
-) {
+// === RESOLUTION HELPERS ===
+
+/**
+ * Mutates renderer state to match export dimensions, returning original states for rollback.
+ */
+function setupExportResolution(tWidth, tHeight) {
+  let activeCamera = camera;
+  scene.traverse((object) => {
+    if (object.isCamera) activeCamera = object;
+  });
+
   const originalState = {
     size: new THREE.Vector2(),
     aspect: activeCamera.aspect,
     left: activeCamera.left,
     right: activeCamera.right,
+    activeCamera,
   };
 
   renderer.getSize(originalState.size);
+  renderer.setSize(tWidth, tHeight, false);
 
-  renderer.setSize(targetWidth, targetHeight, false);
-  if (composer) composer.setSize(targetWidth, targetHeight);
+  if (composer) composer.setSize(tWidth, tHeight);
 
-  const targetAspect = targetWidth / targetHeight;
+  const targetAspect = tWidth / tHeight;
+
   if (activeCamera.isPerspectiveCamera) {
     activeCamera.aspect = targetAspect;
   } else if (activeCamera.isOrthographicCamera) {
@@ -87,12 +87,16 @@ function setupExportResolution(
     activeCamera.left = -(frustumHeight * targetAspect) / 2;
     activeCamera.right = (frustumHeight * targetAspect) / 2;
   }
-  activeCamera.updateProjectionMatrix();
 
+  activeCamera.updateProjectionMatrix();
   return originalState;
 }
 
-function restoreOriginalResolution(renderer, activeCamera, originalState) {
+/**
+ * Rolls back resolution modifications applied during export routines.
+ */
+function restoreOriginalResolution(originalState) {
+  const { activeCamera } = originalState;
   renderer.setSize(originalState.size.x, originalState.size.y, false);
   if (composer) composer.setSize(originalState.size.x, originalState.size.y);
 
@@ -102,68 +106,47 @@ function restoreOriginalResolution(renderer, activeCamera, originalState) {
     activeCamera.left = originalState.left;
     activeCamera.right = originalState.right;
   }
+
   activeCamera.updateProjectionMatrix();
 }
 
-// --- Export Image Logic ---
-export function exportToJPG(scene, renderer, camera) {
-  if (!scene || !renderer || !camera) {
-    console.error("Fundamental objects missing");
-    return null;
-  }
+// === EXPORT 2D IMAGE ===
 
-  let activeCamera = camera;
-  scene.traverse((object) => {
-    if (object.isCamera) activeCamera = object;
-  });
+/**
+ * Renders the active scene into a base64 encoded JPG format.
+ */
+export function exportToJPG() {
+  if (!scene || !renderer || !camera) return null;
 
-  const originalState = setupExportResolution(
-    renderer,
-    activeCamera,
-    targetWidth,
-    targetHeight,
-  );
-
+  const originalState = setupExportResolution(targetWidth, targetHeight);
   const canvasContainer = renderer.domElement.parentElement;
   const currentBgColor = canvasContainer
     ? window.getComputedStyle(canvasContainer).backgroundColor
     : "0xf43b00";
-
   const originalBackground = scene.background;
+
   scene.background = new THREE.Color(currentBgColor);
 
   if (composer) {
     composer.render();
   } else {
-    renderer.render(scene, activeCamera);
+    renderer.render(scene, originalState.activeCamera);
   }
 
   const dataURL = renderer.domElement.toDataURL("image/jpeg", 1.0);
-
   scene.background = originalBackground;
-  restoreOriginalResolution(renderer, activeCamera, originalState);
+  restoreOriginalResolution(originalState);
 
   return dataURL;
 }
 
-export function exportToPNG(scene, renderer, camera) {
-  if (!scene || !renderer || !camera) {
-    console.error("Fundamental objects missing");
-    return null;
-  }
+/**
+ * Renders the active scene into a transparent base64 encoded PNG format.
+ */
+export function exportToPNG() {
+  if (!scene || !renderer || !camera) return null;
 
-  let activeCamera = camera;
-  scene.traverse((object) => {
-    if (object.isCamera) activeCamera = object;
-  });
-
-  const originalState = setupExportResolution(
-    renderer,
-    activeCamera,
-    targetWidth,
-    targetHeight,
-  );
-
+  const originalState = setupExportResolution(targetWidth, targetHeight);
   const originalBackground = scene.background;
   const originalClearAlpha = renderer.getClearAlpha();
 
@@ -177,23 +160,26 @@ export function exportToPNG(scene, renderer, camera) {
       composer.writeBuffer.texture.format = THREE.RGBAFormat;
     composer.render();
   } else {
-    renderer.render(scene, activeCamera);
+    renderer.render(scene, originalState.activeCamera);
   }
 
   const dataURL = renderer.domElement.toDataURL("image/png");
 
   scene.background = originalBackground;
   renderer.setClearAlpha(originalClearAlpha);
-  restoreOriginalResolution(renderer, activeCamera, originalState);
+  restoreOriginalResolution(originalState);
 
   return dataURL;
 }
 
-// --- SVG Pipeline ---
-function convertToSVG_export(scene, camera) {
+// === EXPORT SVG ===
+
+/**
+ * Extracts 2D projected geometry from the 3D instanced mesh to form a raw string block.
+ */
+function convertToSVG_export() {
   const canvasWidth = window.innerWidth;
   const canvasHeight = window.innerHeight;
-
   const matrix = new THREE.Matrix4();
   const instanceScale = new THREE.Vector3();
   const vector = new THREE.Vector3();
@@ -203,7 +189,6 @@ function convertToSVG_export(scene, camera) {
 
   scene.traverse((object) => {
     if (!object.isInstancedMesh) return;
-
     const posAttr = object.geometry.attributes.position;
     const activeInstances = object.userData.activeInstances;
 
@@ -212,12 +197,11 @@ function convertToSVG_export(scene, camera) {
 
       object.getMatrixAt(i, matrix);
       matrix.premultiply(object.matrixWorld);
-
       instanceScale.setFromMatrixScale(matrix);
+
       if (instanceScale.x <= 0.0001) continue;
 
       const pathPoints = [];
-
       for (let v = 0; v < posAttr.count; v++) {
         vector.fromBufferAttribute(posAttr, v);
         vector.applyMatrix4(matrix);
@@ -225,52 +209,35 @@ function convertToSVG_export(scene, camera) {
 
         const x = (vector.x + 1) * 0.5 * canvasWidth;
         const y = -(vector.y - 1) * 0.5 * canvasHeight;
-
         pathPoints.push(
           `${v === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`,
         );
       }
-
       svgPaths.push(`<path d="${pathPoints.join(" ")} Z" fill="black" />`);
     }
   });
 
-  return `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">
-      ${svgPaths.join("\n")}
-    </svg>
-  `;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">${svgPaths.join("\n")}</svg>`;
 }
 
+/**
+ * Merges and refines raw SVG polygon paths using constructive solid geometry.
+ */
 async function convertToSVG_refine(svgString) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(svgString, "image/svg+xml");
   const paths = Array.from(doc.querySelectorAll("path"));
-
   const canvasWidth =
     doc.documentElement.getAttribute("width") || window.innerWidth;
   const canvasHeight =
     doc.documentElement.getAttribute("height") || window.innerHeight;
   const finalSvgPaths = [];
-
-  const totalDots = paths.length;
   const chunkSize = 1000;
-  const totalChunks = Math.ceil(totalDots / chunkSize);
-
-  console.log(`--- SVG Export Started ---`);
-  console.log(`Total dots to refine: ${totalDots}`);
 
   for (let i = 0; i < paths.length; i += chunkSize) {
     const chunk = paths.slice(i, i + chunkSize);
-    const currentChunk = Math.floor(i / chunkSize) + 1;
 
-    const percentComplete = Math.round((i / totalDots) * 100);
-    console.log(
-      `Processing SVG chunk ${currentChunk}/${totalChunks} | ${percentComplete}% complete...`,
-    );
-
-    chunk.forEach((path, chunkIndex) => {
-      const absoluteIndex = i + chunkIndex;
+    chunk.forEach((path) => {
       const dAttr = path.getAttribute("d");
       if (!dAttr) return;
 
@@ -280,86 +247,38 @@ async function convertToSVG_refine(svgString) {
       const triangles = [];
       for (let j = 0; j < coords.length; j += 6) {
         if (j + 5 >= coords.length) break;
-
         const pA = [Number(coords[j]), Number(coords[j + 1])];
         const pB = [Number(coords[j + 2]), Number(coords[j + 3])];
         const pC = [Number(coords[j + 4]), Number(coords[j + 5])];
-
-        // --- CULLING ---
-        // Calculate signed area to drop degenerate geometry and back-facing polygons.
-        // NOTE: If all dots disappear, change `< 0.1` to `> -0.1` (SVG Y-axis inversion).
         const signedArea =
           (pB[0] - pA[0]) * (pC[1] - pA[1]) - (pC[0] - pA[0]) * (pB[1] - pA[1]);
 
         if (signedArea < 0.00001) continue;
-
         triangles.push([[pA, pB, pC, pA]]);
       }
 
-      // If all triangles were culled, there's nothing to draw
       if (triangles.length === 0) return;
 
       let unified = null;
-
       try {
-        // --- ATTEMPT 1: Fast Batch Union ---
         unified = polygonClipping.union(...triangles);
-      } catch (batchError) {
-        // --- ATTEMPT 2: Progressive Reconstruction ---
-        console.log(
-          `Dot #${absoluteIndex + 1}: Batch union failed. Initiating progressive reconstruction...`,
-        );
-
+      } catch (e) {
         unified = [];
         let successfulMerges = 0;
-
         for (let k = 0; k < triangles.length; k++) {
           if (unified.length === 0) {
             unified = [triangles[k]];
             successfulMerges++;
             continue;
           }
-
           try {
             unified = polygonClipping.union(unified, triangles[k]);
             successfulMerges++;
-          } catch (stepError) {
-            // Try micro-nudge for this specific toxic triangle
-            try {
-              const nudgedTriangle = triangles[k].map((polygon) => {
-                const nudgedRing = polygon[0].map((pt, ptIdx) => {
-                  if (ptIdx === 3) return null;
-                  const nudgeX = (ptIdx % 2 === 0 ? 1 : -1) * 0.001;
-                  const nudgeY = (ptIdx % 2 !== 0 ? 1 : -1) * 0.001;
-                  return [pt[0] + nudgeX, pt[1] + nudgeY];
-                });
-                nudgedRing[3] = nudgedRing[0];
-                return [nudgedRing];
-              });
-
-              unified = polygonClipping.union(unified, nudgedTriangle);
-              successfulMerges++;
-            } catch (nudgeError) {
-              // Graceful degradation: The nudge failed. Drop this specific triangle.
-            }
-          }
+          } catch (err) {}
         }
-
-        // --- STRUCTURAL INTEGRITY CHECK ---
-        // If we didn't salvage at least 5 triangles, the shape is likely a mangled mess. Delete it.
-        if (successfulMerges < 5) {
-          console.warn(
-            `Dot #${absoluteIndex + 1}: Shape collapsed (only ${successfulMerges} valid triangles). Deleting dot entirely.`,
-          );
-          unified = null;
-        } else {
-          console.log(
-            `Dot #${absoluteIndex + 1}: Recovered successfully with ${successfulMerges}/${triangles.length} triangles.`,
-          );
-        }
+        if (successfulMerges < 5) unified = null;
       }
 
-      // --- FINAL BUILD ---
       if (unified) {
         const unifiedPathData = [];
         unified.forEach((polygon) => {
@@ -371,53 +290,41 @@ async function convertToSVG_refine(svgString) {
           });
           unifiedPathData.push("Z");
         });
-
         if (unifiedPathData.length > 0) {
           finalSvgPaths.push(
             `<path d="${unifiedPathData.join(" ")}" fill="black" stroke="none" />`,
           );
         }
       }
-      // Notice: The "else" block that exported the red path has been completely removed.
-      // If unified is null, the dot is simply skipped.
     });
 
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  console.log(`Building final SVG document...`);
-
-  const finalSvgDocument = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">
-      ${finalSvgPaths.join("\n")}
-    </svg>
-  `.trim();
-
+  const finalSvgDocument =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">${finalSvgPaths.join("\n")}</svg>`.trim();
   const blob = new Blob([finalSvgDocument], {
     type: "image/svg+xml;charset=utf-8",
   });
 
-  console.log(`--- SVG Export Complete! ---`);
   return URL.createObjectURL(blob);
 }
 
-export async function convertToSVG(scene, camera) {
-  console.log("Extracting raw geometry from Three.js scene...");
-  const rawSvg = convertToSVG_export(scene, camera);
-
-  if (!rawSvg) {
-    console.error("Failed to extract raw geometry.");
-    throw new Error("Failed to generate raw SVG");
-  }
-
+/**
+ * Controller pipeline for full SVG extraction and refinement.
+ */
+export async function convertToSVG() {
+  const rawSvg = convertToSVG_export();
+  if (!rawSvg) throw new Error("Failed to generate raw SVG");
   return await convertToSVG_refine(rawSvg);
 }
 
-// --- Export Video Logic ---
+// === EXPORT VIDEO ===
+
+/**
+ * Compiles rendered frames into a seamless video loop using native WebM or FFmpeg fallbacks.
+ */
 export function exportVideo(
-  renderer,
-  scene,
-  camera,
   durationInSeconds = 5,
   format = "mp4",
   bgColor = null,
@@ -425,20 +332,11 @@ export function exportVideo(
 ) {
   return new Promise(async (resolve, reject) => {
     if (!renderer || !scene || !camera) {
-      reject("Fundamental dependencies missing");
+      reject("Dependencies missing");
       return;
     }
 
-    let activeCamera = camera;
-    scene.traverse((object) => {
-      if (object.isCamera) activeCamera = object;
-    });
-
-    const originalSize = new THREE.Vector2();
-    renderer.getSize(originalSize);
-    const originalAspect = activeCamera.aspect;
-    const originalLeft = activeCamera.left;
-    const originalRight = activeCamera.right;
+    const originalState = setupExportResolution(targetWidth, targetHeight);
     const originalBackground = scene.background;
     const originalClearAlpha = renderer.getClearAlpha();
 
@@ -450,27 +348,11 @@ export function exportVideo(
       renderer.setClearAlpha(0);
     }
 
-    renderer.setSize(targetWidth, targetHeight, false);
-    if (composer) composer.setSize(targetWidth, targetHeight);
-
-    const targetAspect = targetWidth / targetHeight;
-    if (activeCamera.isPerspectiveCamera) {
-      activeCamera.aspect = targetAspect;
-    } else if (activeCamera.isOrthographicCamera) {
-      const frustumHeight = activeCamera.top - activeCamera.bottom;
-      activeCamera.left = -(frustumHeight * targetAspect) / 2;
-      activeCamera.right = (frustumHeight * targetAspect) / 2;
-    }
-    activeCamera.updateProjectionMatrix();
-
-    if (typeof onStartRecord === "function") {
-      onStartRecord();
-    }
+    if (typeof onStartRecord === "function") onStartRecord();
 
     const canvas = renderer.domElement;
     let frameCount = 0;
 
-    // --- TIME LOCK SETUP ---
     const originalPerfNow = window.performance.now.bind(window.performance);
     const originalDateNow = window.Date.now.bind(window.Date);
     const originalRAF = window.requestAnimationFrame.bind(window);
@@ -487,21 +369,12 @@ export function exportVideo(
     };
     window.cancelAnimationFrame = () => {};
 
-    // =========================================================
-    // NATIVE WEBM CHANNEL
-    // =========================================================
     if (format === "webm") {
-      console.log("--- Native Browser WebM Engine Initialized ---");
-
       const chunks = [];
       const stream = canvas.captureStream(0);
       const track = stream.getVideoTracks()[0];
-
-      const mimeType = bgColor
-        ? "video/webm;codecs=vp9"
-        : "video/webm;codecs=vp9";
       const recorder = new MediaRecorder(stream, {
-        mimeType,
+        mimeType: "video/webm;codecs=vp9",
         videoBitsPerSecond: 25000000,
       });
 
@@ -515,29 +388,21 @@ export function exportVideo(
       };
 
       recorder.start();
-
-      // ✅ STRUCTURAL FIX: Track the pipeline state directly inside the loop
       let isFlushing = false;
       let flushFrames = 0;
 
       const recordNextFrame = async () => {
-        // 1. Render the current state (Captures Frame 0 accurately on loop 1)
-        if (composer) {
-          composer.render();
-        } else {
-          renderer.render(scene, activeCamera);
-        }
+        if (composer) composer.render();
+        else renderer.render(scene, originalState.activeCamera);
 
-        // 2. Request video track grab
-        if (track && typeof track.requestFrame === "function") {
+        if (track && typeof track.requestFrame === "function")
           track.requestFrame();
-        }
 
         const swalText = document.querySelector(".swal2-html-container");
         if (swalText) swalText.innerText = `Recording frame ${frameCount}...`;
+
         frameCount++;
 
-        // 3. Evaluate completion status ONLY if we aren't already flushing
         if (!isFlushing) {
           let isSequenceFinished = false;
           if (window.isAnimationLoopComplete) {
@@ -549,26 +414,18 @@ export function exportVideo(
               isSequenceFinished = true;
             }
           }
-
-          if (isSequenceFinished) {
-            isFlushing = true;
-          }
+          if (isSequenceFinished) isFlushing = true;
         }
 
-        // 4. Handle Termination or Continuation
         if (isFlushing) {
-          // Once we have fed 2 extra lookahead frames into the encoder,
-          // our perfect target frame is guaranteed to have cleared the pipeline.
           if (flushFrames >= 2) {
             recorder.stop();
-            return; // Terminate execution immediately
+            return;
           }
           flushFrames++;
         }
 
-        // 5. Advance time and update coordinates for the next frame pass
         simulatedTime += 1000 / 30;
-
         const callbacksToRun = [...rafCallbacks];
         rafCallbacks = [];
         callbacksToRun.forEach((cb) => cb(simulatedTime));
@@ -578,12 +435,6 @@ export function exportVideo(
 
       setTimeout(recordNextFrame, 100);
     } else {
-      // =========================================================
-      // FFmpeg FALLBACK FOR MP4 / MOV
-      // =========================================================
-      console.log(
-        `--- FFmpeg Direct-${format.toUpperCase()} Engine Initialized ---`,
-      );
       const { FFmpeg } = await import("@ffmpeg/ffmpeg");
       const { fetchFile } = await import("@ffmpeg/util");
 
@@ -594,17 +445,12 @@ export function exportVideo(
       const extension = bgColor ? "jpg" : "png";
 
       const captureNextFrame = async () => {
-        // 1. Render current state
-        if (composer) {
-          composer.render();
-        } else {
-          renderer.render(scene, activeCamera);
-        }
+        if (composer) composer.render();
+        else renderer.render(scene, originalState.activeCamera);
 
         const swalText = document.querySelector(".swal2-html-container");
         if (swalText) swalText.innerText = `Capturing frame ${frameCount}...`;
 
-        // 2. Save current pixels
         const frameBlob = await new Promise((res) => {
           canvas.toBlob(
             res,
@@ -617,23 +463,14 @@ export function exportVideo(
         await ffmpeg.writeFile(frameName, await fetchFile(frameBlob));
         frameCount++;
 
-        // 3. Evaluate completion
-        let isSequenceFinished = false;
         if (window.isAnimationLoopComplete) {
-          isSequenceFinished = true;
-        }
-
-        if (isSequenceFinished) {
           if (swalText) swalText.innerText = `Compiling video...`;
           compileVideoAndResolve();
         } else {
-          // 4. Advance clock for next frames
           simulatedTime += 1000 / 30;
-
           const callbacksToRun = [...rafCallbacks];
           rafCallbacks = [];
           callbacksToRun.forEach((cb) => cb(simulatedTime));
-
           setTimeout(captureNextFrame, 0);
         }
       };
@@ -678,8 +515,8 @@ export function exportVideo(
 
           await ffmpeg.exec(ffmpegArgs);
           const finalVideoData = await ffmpeg.readFile(outFilename);
-
           const videoTypeMap = { mp4: "video/mp4", mov: "video/quicktime" };
+
           cleanupWorld();
           try {
             ffmpeg.terminate();
@@ -709,19 +546,10 @@ export function exportVideo(
       rafCallbacks.forEach((cb) => originalRAF(cb));
       rafCallbacks = [];
 
-      renderer.setSize(originalSize.x, originalSize.y, false);
-      if (composer) composer.setSize(originalSize.x, originalSize.y);
-
-      if (activeCamera.isPerspectiveCamera) {
-        activeCamera.aspect = originalAspect;
-      } else if (activeCamera.isOrthographicCamera) {
-        activeCamera.left = originalLeft;
-        activeCamera.right = originalRight;
-      }
-      activeCamera.updateProjectionMatrix();
-
       scene.background = originalBackground;
       renderer.setClearAlpha(originalClearAlpha);
+
+      restoreOriginalResolution(originalState);
     }
   });
 }
