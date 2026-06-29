@@ -5,8 +5,8 @@ import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import polygonClipping from "polygon-clipping";
 
-const targetWidth = 1920;
-const targetHeight = 1080;
+const targetWidth = 2048;
+const targetHeight = 1556;
 
 // --- Export 3D Shape Logic ---
 export async function export3D(scene) {
@@ -254,15 +254,15 @@ async function convertToSVG_refine(svgString) {
   const finalSvgPaths = [];
 
   const totalDots = paths.length;
-  const CHUNK_SIZE = 1000;
-  const totalChunks = Math.ceil(totalDots / CHUNK_SIZE);
+  const chunkSize = 1000;
+  const totalChunks = Math.ceil(totalDots / chunkSize);
 
   console.log(`--- SVG Export Started ---`);
   console.log(`Total dots to refine: ${totalDots}`);
 
-  for (let i = 0; i < paths.length; i += CHUNK_SIZE) {
-    const chunk = paths.slice(i, i + CHUNK_SIZE);
-    const currentChunk = Math.floor(i / CHUNK_SIZE) + 1;
+  for (let i = 0; i < paths.length; i += chunkSize) {
+    const chunk = paths.slice(i, i + chunkSize);
+    const currentChunk = Math.floor(i / chunkSize) + 1;
 
     const percentComplete = Math.round((i / totalDots) * 100);
     console.log(
@@ -424,8 +424,6 @@ export function exportVideo(
   onStartRecord,
 ) {
   return new Promise(async (resolve, reject) => {
-    const ffmpeg = new FFmpeg();
-
     if (!renderer || !scene || !camera) {
       reject("Fundamental dependencies missing");
       return;
@@ -435,10 +433,6 @@ export function exportVideo(
     scene.traverse((object) => {
       if (object.isCamera) activeCamera = object;
     });
-
-    if (!ffmpeg.loaded) {
-      await ffmpeg.load();
-    }
 
     const originalSize = new THREE.Vector2();
     renderer.getSize(originalSize);
@@ -473,210 +467,239 @@ export function exportVideo(
       onStartRecord();
     }
 
-    console.log(
-      `--- Strict Frame-By-Frame Direct-${format.toUpperCase()} Engine Initialized ---`,
-    );
-
     const canvas = renderer.domElement;
     let frameCount = 0;
-    const mimeType = bgColor ? "image/jpeg" : "image/png";
-    const extension = bgColor ? "jpg" : "png";
 
-    // ==========================================
-    // THE TIME HEIST V2: Multi-Loop Interception
-    // ==========================================
+    // --- TIME LOCK SETUP ---
     const originalPerfNow = window.performance.now.bind(window.performance);
     const originalDateNow = window.Date.now.bind(window.Date);
     const originalRAF = window.requestAnimationFrame.bind(window);
     const originalCancelRAF = window.cancelAnimationFrame.bind(window);
 
     let simulatedTime = originalPerfNow();
-
-    // 1. Freeze the global clocks
     window.performance.now = () => simulatedTime;
     window.Date.now = () => Math.floor(simulatedTime);
 
-    // 2. Intercept ALL background animation loops into an array
     let rafCallbacks = [];
     window.requestAnimationFrame = (callback) => {
       rafCallbacks.push(callback);
-      return Math.random(); // Dummy ID
+      return Math.random();
     };
-    window.cancelAnimationFrame = () => {}; // Prevent loops from cancelling our fake IDs
-    // ==========================================
+    window.cancelAnimationFrame = () => {};
 
-    const captureNextFrame = async () => {
-      // Step 1: Advance our fake clock by EXACTLY 1/30th of a second
-      simulatedTime += 1000 / 30;
+    if (format === "webm") {
+      console.log("--- Native Browser WebM Engine Initialized ---");
 
-      // Step 2: Flush the queue and run ALL animation loops for this exact moment in time
-      const callbacksToRun = [...rafCallbacks];
-      rafCallbacks = []; // Clear the queue so the loops can re-register themselves for the next frame
+      const chunks = [];
+      // Capture canvas stream at 0 FPS (we will manually push frames using requestFrame())
+      const stream = canvas.captureStream(0);
+      const track = stream.getVideoTracks()[0];
 
-      callbacksToRun.forEach((cb) => cb(simulatedTime));
-
-      // Step 3: Render the newly updated scene
-      if (composer) {
-        composer.render();
-      } else {
-        renderer.render(scene, activeCamera);
-      }
-
-      // Step 4: Update the UI
-      const swalText = document.querySelector(".swal2-html-container");
-      let targetFrames = "...";
-
-      if (typeof durationInSeconds === "number") {
-        targetFrames = durationInSeconds * 30;
-      } else if (window.exportTotalDuration) {
-        targetFrames = window.exportTotalDuration * 30;
-      } else if (window.exportTargetDuration) {
-        targetFrames = window.exportTargetDuration * 30;
-      }
-
-      if (swalText) {
-        swalText.innerText = `Capturing frame ${frameCount} `;
-      }
-
-      // Step 5: Wait for the browser to finish extracting the high-res Blob (Animation remains fully paused here!)
-      const frameBlob = await new Promise((res) => {
-        canvas.toBlob(
-          res,
-          mimeType,
-          mimeType === "image/jpeg" ? 0.98 : undefined,
-        );
+      // Select best native WebM type
+      const mimeType = "video/webm;codecs=vp9";
+      const recorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: 25000000,
       });
 
-      // Step 6: Save to FFmpeg virtual file system
-      const frameName = `frame_${String(frameCount).padStart(4, "0")}.${extension}`;
-      await ffmpeg.writeFile(frameName, await fetchFile(frameBlob));
-      frameCount++;
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
 
-      // Step 7: Check if we are done
-      let isSequenceFinished = false;
+      recorder.onstop = () => {
+        cleanupWorld();
+        resolve(new Blob(chunks, { type: "video/webm" }));
+      };
 
-      if (typeof durationInSeconds === "number") {
-        if (frameCount >= durationInSeconds * 30) isSequenceFinished = true;
-      } else {
-        // Wait patiently for the 3D engine to confirm the geometry has stopped moving
+      recorder.start();
+
+      const recordNextFrame = async () => {
+        simulatedTime += 1000 / 30;
+
+        const callbacksToRun = [...rafCallbacks];
+        rafCallbacks = [];
+        callbacksToRun.forEach((cb) => cb(simulatedTime));
+
+        if (composer) {
+          composer.render();
+        } else {
+          renderer.render(scene, activeCamera);
+        }
+
+        // Force native stream to grab the freshly rendered canvas pixels
+        if (track && typeof track.requestFrame === "function") {
+          track.requestFrame();
+        }
+
+        // Update loader UI text
+        const swalText = document.querySelector(".swal2-html-container");
+        if (swalText) swalText.innerText = `Recording frame ${frameCount}...`;
+
+        frameCount++;
+
+        let isSequenceFinished = false;
         if (window.isAnimationLoopComplete) {
           if (window.exportTotalDuration) {
-            // IF A GIF IS PLAYING: Ensure we only cut the video exactly at the end of the GIF's natural loop cycle
             const gifFrames = Math.round(window.exportTotalDuration * 30);
-            if (frameCount > 0 && frameCount % gifFrames === 0) {
+            if (frameCount > 0 && frameCount % gifFrames === 0)
               isSequenceFinished = true;
-            }
           } else {
-            // NO GIF: Cut the video the exact frame the 3D geometry finishes
             isSequenceFinished = true;
           }
         }
-      }
 
-      // Step 8: Route logic
-      if (isSequenceFinished) {
-        if (swalText)
-          swalText.innerText = `Compiling video. this may take a moment.`;
-        console.log(`Captured ${frameCount} frames. Compiling video.`);
-        compileVideo();
-      } else {
-        // Schedule the next frame synchronously on the next event loop tick
-        setTimeout(captureNextFrame, 0);
-      }
-    };
-
-    // --- FFmpeg Compilation Logic ---
-    const compileVideo = async () => {
-      try {
-        let outFilename = `output.${format}`;
-        let ffmpegArgs = ["-framerate", "30", "-i", `frame_%04d.${extension}`];
-
-        if (format === "mp4") {
-          ffmpegArgs.push(
-            "-c:v",
-            "libx264",
-            "-tune",
-            "animation",
-            "-pix_fmt",
-            "yuv420p",
-            "-crf",
-            "12",
-            outFilename,
-          );
-        } else if (format === "mov") {
-          ffmpegArgs.push(
-            "-c:v",
-            "prores_ks",
-            "-profile:v",
-            "4",
-            "-pix_fmt",
-            "yuva444p10le",
-            outFilename,
-          );
+        if (isSequenceFinished) {
+          recorder.stop();
         } else {
-          ffmpegArgs.push(
-            "-c:v",
-            "libvpx",
-            "-crf",
-            "20",
-            "-b:v",
-            "2M",
-            "-deadline",
-            "realtime",
-            "-cpu-used",
-            "4",
-            "-threads",
-            "1",
-            "-pix_fmt",
-            bgColor ? "yuv420p" : "yuva420p",
-            outFilename,
-          );
+          // Micro-delay gives MediaRecorder room to breathe without choking the event loop
+          setTimeout(recordNextFrame, 10);
         }
+      };
 
-        await ffmpeg.exec(ffmpegArgs);
-        const finalVideoData = await ffmpeg.readFile(outFilename);
+      // Kickoff native recording loop
+      setTimeout(recordNextFrame, 100);
+    } else {
+      // =========================================================
+      // FFMPEG FALLBACK FOR MP4 / MOV ONLY
+      // =========================================================
+      console.log(
+        `--- FFmpeg Direct-${format.toUpperCase()} Engine Initialized ---`,
+      );
+      const { FFmpeg } = await import("@ffmpeg/ffmpeg");
+      const { fetchFile } = await import("@ffmpeg/util");
 
-        const videoTypeMap = {
-          mp4: "video/mp4",
-          mov: "video/quicktime",
-          webm: "video/webm",
-        };
-        resolve(
-          new Blob([finalVideoData.buffer], { type: videoTypeMap[format] }),
-        );
-      } catch (err) {
-        reject(err);
-      } finally {
-        window.performance.now = originalPerfNow;
-        window.Date.now = originalDateNow;
-        window.requestAnimationFrame = originalRAF;
-        window.cancelAnimationFrame = originalCancelRAF;
+      const ffmpeg = new FFmpeg();
+      await ffmpeg.load();
 
-        rafCallbacks.forEach((cb) => originalRAF(cb));
+      const captureMimeType = bgColor ? "image/jpeg" : "image/png";
+      const extension = bgColor ? "jpg" : "png";
+
+      const captureNextFrame = async () => {
+        simulatedTime += 1000 / 30;
+
+        const callbacksToRun = [...rafCallbacks];
         rafCallbacks = [];
+        callbacksToRun.forEach((cb) => cb(simulatedTime));
 
-        renderer.setSize(originalSize.x, originalSize.y, false);
-        if (composer) composer.setSize(originalSize.x, originalSize.y);
-
-        if (activeCamera.isPerspectiveCamera) {
-          activeCamera.aspect = originalAspect;
-        } else if (activeCamera.isOrthographicCamera) {
-          activeCamera.left = originalLeft;
-          activeCamera.right = originalRight;
+        if (composer) {
+          composer.render();
+        } else {
+          renderer.render(scene, activeCamera);
         }
-        activeCamera.updateProjectionMatrix();
 
-        scene.background = originalBackground;
-        renderer.setClearAlpha(originalClearAlpha);
+        const swalText = document.querySelector(".swal2-html-container");
+        if (swalText) swalText.innerText = `Capturing frame ${frameCount}...`;
 
+        const frameBlob = await new Promise((res) => {
+          canvas.toBlob(
+            res,
+            captureMimeType,
+            captureMimeType === "image/jpeg" ? 1 : undefined,
+          );
+        });
+
+        const frameName = `frame_${String(frameCount).padStart(4, "0")}.${extension}`;
+        await ffmpeg.writeFile(frameName, await fetchFile(frameBlob));
+        frameCount++;
+
+        let isSequenceFinished = false;
+        if (window.isAnimationLoopComplete) {
+          isSequenceFinished = true; // MP4 loops don't require the custom GIF modulo padding
+        }
+
+        if (isSequenceFinished) {
+          if (swalText) swalText.innerText = `Compiling video...`;
+          compileVideoAndResolve();
+        } else {
+          setTimeout(captureNextFrame, 0);
+        }
+      };
+
+      const compileVideoAndResolve = async () => {
         try {
-          ffmpeg.terminate();
-          console.log("Worker terminated. RAM successfully flushed.");
-        } catch (e) {}
-      }
-    };
+          let outFilename = `output.${format}`;
+          let ffmpegArgs = [
+            "-framerate",
+            "30",
+            "-i",
+            `frame_%04d.${extension}`,
+          ];
 
-    // Kick off the strict capture loop
-    setTimeout(captureNextFrame, 100);
+          if (format === "mp4") {
+            ffmpegArgs.push(
+              "-c:v",
+              "libx264",
+              "-preset",
+              "ultrafast",
+              "-tune",
+              "animation",
+              "-pix_fmt",
+              "yuv420p",
+              "-crf",
+              "18",
+              outFilename,
+            );
+          } else if (format === "mov") {
+            ffmpegArgs.push(
+              "-c:v",
+              "prores_ks",
+              "-profile:v",
+              "3",
+              "-vendor",
+              "ap10",
+              "-pix_fmt",
+              "yuva444p10le",
+              outFilename,
+            );
+          }
+
+          await ffmpeg.exec(ffmpegArgs);
+          const finalVideoData = await ffmpeg.readFile(outFilename);
+
+          const videoTypeMap = { mp4: "video/mp4", mov: "video/quicktime" };
+          cleanupWorld();
+          try {
+            ffmpeg.terminate();
+          } catch (e) {}
+
+          resolve(
+            new Blob([finalVideoData.buffer], { type: videoTypeMap[format] }),
+          );
+        } catch (err) {
+          cleanupWorld();
+          try {
+            ffmpeg.terminate();
+          } catch (e) {}
+          reject(err);
+        }
+      };
+
+      setTimeout(captureNextFrame, 100);
+    }
+
+    // --- REUSABLE SYSTEM RESTORATION ---
+    function cleanupWorld() {
+      window.performance.now = originalPerfNow;
+      window.Date.now = originalDateNow;
+      window.requestAnimationFrame = originalRAF;
+      window.cancelAnimationFrame = originalCancelRAF;
+
+      rafCallbacks.forEach((cb) => originalRAF(cb));
+      rafCallbacks = [];
+
+      renderer.setSize(originalSize.x, originalSize.y, false);
+      if (composer) composer.setSize(originalSize.x, originalSize.y);
+
+      if (activeCamera.isPerspectiveCamera) {
+        activeCamera.aspect = originalAspect;
+      } else if (activeCamera.isOrthographicCamera) {
+        activeCamera.left = originalLeft;
+        activeCamera.right = originalRight;
+      }
+      activeCamera.updateProjectionMatrix();
+
+      scene.background = originalBackground;
+      renderer.setClearAlpha(originalClearAlpha);
+    }
   });
 }
