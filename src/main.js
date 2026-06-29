@@ -39,14 +39,12 @@ import {
   exportVideo,
   exportToJPG,
   convertToSVG,
-  cleanupTempFiles,
 } from "./scripts/three_exportLogic.js";
 import Swal from "sweetalert2";
 import {
   loadImageAnimation,
   handleAnimationSwitch,
   resetAnimationTimeline,
-  forcePauseAnimation,
   updateButtonUI,
   handleFocusToggle,
 } from "./scripts/three_animationLogic.js";
@@ -221,7 +219,10 @@ export function changeColourBG(selectedOption) {
 
 // --- Initialization & Event Binding ---
 window.addEventListener("load", () => {
-  initThree("canvas");
+  const startingSettings = getSettings();
+
+  // Pass the starting gridScale into initThree
+  initThree("canvas", startingSettings.gridScale);
 
   const currentBgColor = document.getElementById("cus-bgChoice");
   const applyVisualChanges = () => {
@@ -251,7 +252,7 @@ window.addEventListener("load", () => {
 
   const handleAnimButtonClick = (animName) => {
     if (isMorphActive()) return;
-    if (currentMode === "TransitionMode ") {
+    if (currentMode === "TransitionMode") {
       setPendingTransition(animName);
       document.getElementById("hiddenTransitionInput").click();
     } else {
@@ -470,7 +471,6 @@ window.addEventListener("load", () => {
       delete targetMesh.userData.freezeBackground;
 
       setSourceGifBackup(null); // Explicit garbage collection!
-      forcePauseAnimation();
     }
   });
 
@@ -688,23 +688,14 @@ window.addEventListener("load", () => {
                   resetAnimationTimeline(controls);
               }
 
-              const loopDurations = {
-                default: 8,
-                eased: 5,
-                breakApart: 10,
-                implode: 15,
-                scramble: 10,
-              };
-
-              const animDuration = loopDurations[currentActiveAnimation] || 8;
-              window.exportTargetDuration = animDuration;
+              window.exportTargetDuration = undefined;
 
               if (gifDurationSeconds > 0) {
-                window.exportTotalDuration = isReplayingTransition
-                  ? animDuration + gifDurationSeconds
-                  : gifDurationSeconds;
+                // We only track duration if a GIF is present, so we don't cut its playback mid-loop
+                window.exportTotalDuration = gifDurationSeconds;
               } else {
-                window.exportTotalDuration = animDuration;
+                // No GIF? Remove the duration cap entirely. The engine dictates the length.
+                window.exportTotalDuration = undefined;
               }
 
               resetCameraView();
@@ -734,7 +725,11 @@ window.addEventListener("load", () => {
 
         triggerDownload(downloadUrl, fileName, targetFormat === "webm");
       } catch (error) {
-        Swal.fire("Error", "Export failed: " + error.message, "error");
+        const errorMsg =
+          error?.message ||
+          error ||
+          "Web Worker crashed (Likely Out of Memory)";
+        Swal.fire("Error", "Export failed: " + errorMsg, "error");
       } finally {
         // RESTORED: Spinner Hide and URL Revoke Logic
         const spinner = document.getElementById("exportSpinner");
@@ -755,7 +750,6 @@ window.addEventListener("load", () => {
             URL.revokeObjectURL(urlToRevoke);
           }, 2000);
         }
-        await cleanupTempFiles();
       }
     });
 

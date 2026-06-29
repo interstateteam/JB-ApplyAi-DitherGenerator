@@ -5,10 +5,8 @@ import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import polygonClipping from "polygon-clipping";
 
-const targetWidth = 3840;
-const targetHeight = 2160;
-
-const ffmpeg = new FFmpeg();
+const targetWidth = 1920;
+const targetHeight = 1080;
 
 // --- Export 3D Shape Logic ---
 export async function export3D(scene) {
@@ -426,6 +424,8 @@ export function exportVideo(
   onStartRecord,
 ) {
   return new Promise(async (resolve, reject) => {
+    const ffmpeg = new FFmpeg();
+
     if (!renderer || !scene || !camera) {
       reject("Fundamental dependencies missing");
       return;
@@ -535,7 +535,7 @@ export function exportVideo(
       }
 
       if (swalText) {
-        swalText.innerText = `Capturing perfect frame ${frameCount} of ${targetFrames}...`;
+        swalText.innerText = `Capturing frame ${frameCount} `;
       }
 
       // Step 5: Wait for the browser to finish extracting the high-res Blob (Animation remains fully paused here!)
@@ -554,28 +554,30 @@ export function exportVideo(
 
       // Step 7: Check if we are done
       let isSequenceFinished = false;
+
       if (typeof durationInSeconds === "number") {
         if (frameCount >= durationInSeconds * 30) isSequenceFinished = true;
       } else {
-        const totalExportDuration =
-          window.exportTotalDuration || window.exportTargetDuration;
-
-        if (totalExportDuration) {
-          if (frameCount >= totalExportDuration * 30) {
+        // Wait patiently for the 3D engine to confirm the geometry has stopped moving
+        if (window.isAnimationLoopComplete) {
+          if (window.exportTotalDuration) {
+            // IF A GIF IS PLAYING: Ensure we only cut the video exactly at the end of the GIF's natural loop cycle
+            const gifFrames = Math.round(window.exportTotalDuration * 30);
+            if (frameCount > 0 && frameCount % gifFrames === 0) {
+              isSequenceFinished = true;
+            }
+          } else {
+            // NO GIF: Cut the video the exact frame the 3D geometry finishes
             isSequenceFinished = true;
           }
-        } else if (window.isAnimationLoopComplete) {
-          isSequenceFinished = true;
         }
       }
 
       // Step 8: Route logic
       if (isSequenceFinished) {
         if (swalText)
-          swalText.innerText = `Compiling video... this may take a moment.`;
-        console.log(
-          `Captured ${frameCount} pristine frames. Initializing direct compilation...`,
-        );
+          swalText.innerText = `Compiling video. this may take a moment.`;
+        console.log(`Captured ${frameCount} frames. Compiling video.`);
         compileVideo();
       } else {
         // Schedule the next frame synchronously on the next event loop tick
@@ -614,11 +616,17 @@ export function exportVideo(
         } else {
           ffmpegArgs.push(
             "-c:v",
-            "libvpx-vp9",
+            "libvpx",
             "-crf",
-            "10",
+            "20",
             "-b:v",
-            "0",
+            "2M",
+            "-deadline",
+            "realtime",
+            "-cpu-used",
+            "4",
+            "-threads",
+            "1",
             "-pix_fmt",
             bgColor ? "yuv420p" : "yuva420p",
             outFilename,
@@ -639,18 +647,13 @@ export function exportVideo(
       } catch (err) {
         reject(err);
       } finally {
-        // ==========================================
-        // RESTORE THE REAL WORLD
-        // ==========================================
         window.performance.now = originalPerfNow;
         window.Date.now = originalDateNow;
         window.requestAnimationFrame = originalRAF;
         window.cancelAnimationFrame = originalCancelRAF;
 
-        // Resume all background animation loops naturally into the real-world timeline
         rafCallbacks.forEach((cb) => originalRAF(cb));
         rafCallbacks = [];
-        // ==========================================
 
         renderer.setSize(originalSize.x, originalSize.y, false);
         if (composer) composer.setSize(originalSize.x, originalSize.y);
@@ -666,16 +669,9 @@ export function exportVideo(
         scene.background = originalBackground;
         renderer.setClearAlpha(originalClearAlpha);
 
-        // Cleanup FFmpeg virtual files
-        for (let i = 0; i < frameCount; i++) {
-          try {
-            await ffmpeg.deleteFile(
-              `frame_${String(i).padStart(4, "0")}.${extension}`,
-            );
-          } catch (e) {}
-        }
         try {
-          await ffmpeg.deleteFile(`output.${format}`);
+          ffmpeg.terminate();
+          console.log("Worker terminated. RAM successfully flushed.");
         } catch (e) {}
       }
     };
@@ -683,15 +679,4 @@ export function exportVideo(
     // Kick off the strict capture loop
     setTimeout(captureNextFrame, 100);
   });
-}
-
-export async function cleanupTempFiles(
-  files = ["input.webm", "output.mov", "output.mp4"],
-) {
-  for (const file of files) {
-    try {
-      await ffmpeg.deleteFile(file);
-      console.log(`Cleaned up: ${file}`);
-    } catch (e) {}
-  }
 }

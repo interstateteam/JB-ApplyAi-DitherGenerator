@@ -1,40 +1,45 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createPostProcessor } from "./thee_styleLogic.js";
-import {
-  updateCameraAnimation,
-  forcePauseAnimation,
-} from "./three_animationLogic.js";
+import { updateCameraAnimation } from "./three_animationLogic.js";
+import { getResponsiveZoom } from "./three_gridLogic.js";
 
 // --- Global State Exports ---
 export let scene, camera, renderer, controls, material;
 export let pauseControl = false;
-let dynamicZoom = 1;
+export let dynamicZoom = 1;
 export let composer = null;
 
-// --- Configuration ---
-const cameraSetup = {
-  position: { x: 0, y: 0, z: 1000 },
-  target: { x: 0, y: 0, z: 0 },
-  zoom: 1,
+// --- Core Functions ---
+
+export const getCameraSetup = (initialGridScale) => {
+  // Fetch the correct zoom right at startup
+  const initialZoom = initialGridScale
+    ? getResponsiveZoom(initialGridScale)
+    : 1;
+
+  return {
+    position: { x: 0, y: 0, z: 1000 },
+    target: { x: 0, y: 0, z: 0 },
+    zoom: initialZoom,
+  };
 };
 
-// --- Core Functions ---
+export const setCameraZoom = (zoomLevel) => {
+  dynamicZoom = zoomLevel;
+  if (camera) {
+    camera.zoom = dynamicZoom;
+    camera.updateProjectionMatrix();
+
+    if (controls) controls.saveState();
+  }
+};
 
 // Toggles the auto-rotation of the scene
 export const setPauseControl = (value) => {
   pauseControl = value;
   if (controls) {
     controls.autoRotate = !value;
-  }
-};
-
-// update the camera zoom
-export const setCameraZoom = (zoomLevel) => {
-  dynamicZoom = zoomLevel;
-  if (camera) {
-    camera.zoom = dynamicZoom;
-    camera.updateProjectionMatrix();
   }
 };
 
@@ -49,36 +54,39 @@ export const setCameraClipping = (distance) => {
 // Resets the camera to its initial state and pauses rotation
 export const resetCameraView = () => {
   if (!camera || !controls) return;
-  forcePauseAnimation();
   controls.reset();
   camera.zoom = dynamicZoom;
   camera.updateProjectionMatrix();
 };
 
 // Initializes core Three.js components
-export const initThree = (canvasId) => {
+export const initThree = (canvasId, initialGridScale) => {
   const htmlCanvas = document.getElementById(canvasId);
   if (!htmlCanvas) return;
+
+  const config = getCameraSetup(initialGridScale);
 
   // Scene Setup
   scene = new THREE.Scene();
   scene.background = null;
 
-  // Camera Setup (Orthographic for consistent dot sizes regardless of depth)
+  const frustumScale = 1.25;
+
+  // Camera Setup
   camera = new THREE.OrthographicCamera(
-    window.innerWidth / -2,
-    window.innerWidth / 2,
-    window.innerHeight / 2,
-    window.innerHeight / -2,
+    (window.innerWidth / -2) * frustumScale,
+    (window.innerWidth / 2) * frustumScale,
+    (window.innerHeight / 2) * frustumScale,
+    (window.innerHeight / -2) * frustumScale,
     -2000,
     4000,
   );
-  camera.position.set(
-    cameraSetup.position.x,
-    cameraSetup.position.y,
-    cameraSetup.position.z,
-  );
-  camera.zoom = cameraSetup.zoom;
+
+  camera.position.set(config.position.x, config.position.y, config.position.z);
+  camera.zoom = config.zoom;
+
+  dynamicZoom = config.zoom;
+
   camera.updateProjectionMatrix();
 
   // Renderer Setup
@@ -93,11 +101,7 @@ export const initThree = (canvasId) => {
 
   // Controls Setup (Pan/zoom/rotate with smooth damping)
   controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(
-    cameraSetup.target.x,
-    cameraSetup.target.y,
-    cameraSetup.target.z,
-  );
+  controls.target.set(config.target.x, config.target.y, config.target.z);
   controls.enableDamping = true;
   controls.dampingFactor = 0.5;
   controls.autoRotate = true;

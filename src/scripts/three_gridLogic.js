@@ -17,6 +17,17 @@ let instancedMesh = null;
 
 let cachedLogomarkGeometry = null;
 
+export const getResponsiveZoom = (gridScale) => {
+  const currentWidth = window.innerWidth; // Or the width of your canvas container
+  const screenFactor = Math.min(currentWidth / 1920, 1);
+  return (1 / gridScale) * screenFactor;
+};
+
+export const handleGridScaleUpdate = (newGridScale) => {
+  const adjustedZoom = getResponsiveZoom(newGridScale);
+  setCameraZoom(adjustedZoom);
+};
+
 const initLogomarkGeometry = () => {
   const loader = new SVGLoader();
   loader.load(logomarkUrl, (data) => {
@@ -117,6 +128,11 @@ export const initThreeGrid = (imgWidth, imgHeight, settings) => {
   const imgAspect = imgWidth / imgHeight;
   const screenAspect = window.innerWidth / window.innerHeight;
 
+  if (settings && settings.gridScale) {
+    const newZoom = getResponsiveZoom(settings.gridScale);
+    setCameraZoom(newZoom);
+  }
+
   let cols, rows;
   if (imgAspect > screenAspect) {
     cols = maxCols;
@@ -137,7 +153,7 @@ export const initThreeGrid = (imgWidth, imgHeight, settings) => {
     cols * rows,
   );
 
-  setCameraZoom(5 / gridScale);
+  setCameraZoom(6 / gridScale);
   scene.add(instancedMesh);
 
   return { cols, rows, instancedMesh };
@@ -330,6 +346,11 @@ export const queueNextTransitionImage = (img, settings) => {
   const maxRows = Math.floor(window.innerHeight / pixelAmount);
   const imgAspect = img.width / img.height;
   const screenAspect = window.innerWidth / window.innerHeight;
+
+  if (settings && settings.gridScale) {
+    const newZoom = getResponsiveZoom(settings.gridScale);
+    setCameraZoom(newZoom);
+  }
 
   let cols, rows;
   if (imgAspect > screenAspect) {

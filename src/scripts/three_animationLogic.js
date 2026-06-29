@@ -3,11 +3,8 @@ import { scene, resetCameraView } from "./three_sceneLogic.js";
 
 // --- 1. Bulletproof Initial State ---
 let activeType = null;
-let isPaused = true;
+let isPaused = false;
 let time = 0;
-
-// Tracker to prevent phantom event-bubbling double-clicks
-let lastSwitchTime = 0;
 
 // Store controls globally so UI buttons can reset rotations
 let cachedControls = null;
@@ -82,44 +79,33 @@ export const updateButtonUI = () => {
 export const getAnimationState = () => ({ activeType, isPaused });
 
 // --- 4. Engine Controls ---
-export const handleAnimationSwitch = (requestedType, forcePlay = false) => {
-  const now = Date.now();
-
-  // FIX: Increased debounce timer to 300ms to absorb persistent ghost clicks!
-  if (now - lastSwitchTime < 300 && !forcePlay) {
-    console.log("[Engine] Phantom click intercepted and destroyed!");
-    return;
-  }
-  lastSwitchTime = now;
-
+export const handleAnimationSwitch = (requestedType, forceRestart = false) => {
   console.log(
-    `[Engine] Requested: ${requestedType} | Previous: ${activeType} | wasPaused: ${isPaused}`,
+    `Requested: ${requestedType} | Previous: ${activeType} | wasPaused: ${isPaused} | forceRestart: ${forceRestart}`,
   );
 
-  // CASE 1: Toggle Pause State
-  if (activeType === requestedType && !forcePlay) {
+  if (activeType === requestedType && !forceRestart) {
     isPaused = !isPaused;
-    console.log(`[Engine] Toggling pause state to: ${isPaused}`);
+    console.log(`Toggling pause state to: ${isPaused}`);
     updateButtonUI();
-    return; // Exit immediately so timeline is not reset
+    return;
   }
 
-  // CASE 2: Hard switch to a new animation
+  // CASE 2: Hard switch to a new animation (or forced restart)
   activeType = requestedType;
   isPaused = false;
-  console.log("[Engine] Forcing play on new animation");
 
-  // Skip the initial dead-zone frames for explosive animations
-  time = requestedType === "breakApart" || requestedType === "implode" ? 60 : 0;
+  // ADD THIS LINE: Force the global animation clock back to frame 0!
+  time = 0;
 
-  // Snap camera and clear OrbitControls offsets
+  console.log("Pressing play on new (or restarted) animation");
+
   if (typeof resetCameraView === "function") resetCameraView();
+
   if (cachedControls) {
     cachedControls.autoRotate = false;
-    if (typeof cachedControls.reset === "function") cachedControls.reset();
   }
 
-  // Instantly return the grid to its base state before the new animation starts
   resetMeshTransforms();
   updateButtonUI();
 };
@@ -130,10 +116,8 @@ export const handleFocusToggle = () => {
   time = 0;
 
   if (typeof resetCameraView === "function") resetCameraView();
-
   if (cachedControls) {
     cachedControls.autoRotate = false;
-    if (typeof cachedControls.reset === "function") cachedControls.reset();
   }
 
   resetMeshTransforms();
@@ -146,11 +130,6 @@ export const resetAnimationTimeline = (controls) => {
   if (controls) {
     updateCameraAnimation(controls);
   }
-};
-
-export const forcePauseAnimation = () => {
-  isPaused = true;
-  updateButtonUI();
 };
 
 // --- 5. Main Render Loop logic ---
@@ -739,5 +718,5 @@ export function loadImageAnimation() {
     imgCTX.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
     imgCTX.drawImage(img, x, y, scaledWidth, scaledHeight);
   };
-  img.src = "src/assets/defaultImageTransparent.png";
+  img.src = "./src/assets/defaultImageTransparent.png";
 }
