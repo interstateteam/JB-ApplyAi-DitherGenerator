@@ -3,14 +3,14 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { updateCameraAnimation } from "./three_animationLogic.js";
 import { getResponsiveZoom } from "./three_gridLogic.js";
 
-// === GLOBAL STATE ===
+// --- GLOBAL STATE ---
 
 export let scene, camera, renderer, controls, material;
 export let pauseControl = false;
 export let dynamicZoom = 1;
 export let composer = null;
 
-// === CAMERA LOGIC ===
+// --- CAMERA LOGIC ---
 
 /**
  * Generates the initial camera configuration object.
@@ -67,7 +67,7 @@ export const resetCameraView = () => {
   camera.updateProjectionMatrix();
 };
 
-// === INITIALIZATION ===
+// --- INITIALIZATION ---
 
 /**
  * Bootstraps the Three.js scene, renderer, camera, and standard materials.

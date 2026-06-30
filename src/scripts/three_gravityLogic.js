@@ -1,6 +1,78 @@
 import { getPixelData } from "./three_imageLogic.js";
 
-// === PIXEL RESOLUTION ===
+// --- LIVE GRID SHIFT (used by three_gridLogic.js applyImageToGrid) ---
+
+/**
+ * Computes the per-cell positional gravity shift for the main grid build pipeline.
+ * This is the version actually wired into rendering — moved here from an inline
+ * duplicate that previously lived in three_gridLogic.js. The "RESOLVED PIXEL"
+ * helpers further down (getResolvedPixelData / calculateOriginalGravityShift) are a
+ * separate, currently unused outline-aware variant and are left untouched.
+ */
+export const calculateGravityShift = (
+  col,
+  row,
+  cols,
+  rows,
+  imgData,
+  minBright,
+  maxBright,
+  alpha,
+  smallnessInfluence,
+  pixelGravity,
+  spacing,
+  alignmentScale,
+) => {
+  let shiftX = 0;
+  let shiftY = 0;
+
+  if (alpha <= 0.01) return { shiftX, shiftY };
+
+  const getSafe = (c, r) =>
+    getPixelData(
+      imgData,
+      Math.max(0, Math.min(cols - 1, c)),
+      Math.max(0, Math.min(rows - 1, r)),
+      cols,
+      rows,
+      minBright,
+      maxBright,
+    );
+
+  const neighbors = {
+    left: getSafe(col - 1, row),
+    right: getSafe(col + 1, row),
+    up: getSafe(col, row - 1),
+    down: getSafe(col, row + 1),
+  };
+
+  if (Object.values(neighbors).some((n) => n.alpha <= 0.01)) {
+    return { shiftX, shiftY };
+  }
+
+  const maxShift = spacing * 5.0;
+  const calcShift = (grad) => {
+    const val = -grad * pixelGravity * spacing * 0.25;
+    return Math.max(-maxShift, Math.min(maxShift, val));
+  };
+
+  const alignmentFactor = document.getElementById("alignmentScale")
+    ? alignmentScale / 100
+    : 1.0;
+
+  shiftX =
+    calcShift(neighbors.right.brightness - neighbors.left.brightness) *
+    smallnessInfluence *
+    alignmentFactor;
+  shiftY =
+    calcShift(neighbors.down.brightness - neighbors.up.brightness) *
+    smallnessInfluence *
+    alignmentFactor;
+
+  return { shiftX, shiftY };
+};
+
+// --- PIXEL RESOLUTION ---
 
 /**
  * Evaluates whether a coordinate belongs to the active image foreground or background.
@@ -64,7 +136,7 @@ export const getResolvedPixelData = (
   return { ...self, isOutline: false };
 };
 
-// === GRAVITY PHYSICS ===
+// --- GRAVITY PHYSICS ---
 
 /**
  * Determines positional shifts mimicking gravity based on surrounding pixel brightness constraints.

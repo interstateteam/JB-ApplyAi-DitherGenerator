@@ -5,7 +5,7 @@ import {
 } from "./three_animationLogic.js";
 import { getActiveMesh } from "./three_gridLogic.js";
 
-// === STATE ===
+// --- STATE ---
 
 export let pendingTransitionAnimation = "breakApart";
 export let lastTransitionBackup = null;
@@ -15,7 +15,28 @@ export const setPendingTransition = (animName) => {
   pendingTransitionAnimation = animName;
 };
 
-// === TRANSITION PIPELINE ===
+// --- SHARED HELPERS ---
+
+/**
+ * Clones and pads a transition backup's positions/scales/rotations to exactly match
+ * a target instance count. Used both when finalizing a morph and when re-priming a
+ * transition for video export.
+ */
+export const buildSafeTransitionArrays = (backup, count) => {
+  let safePos = backup.positions.map((v) => v.clone()).slice(0, count);
+  let safeScl = [...backup.scales].slice(0, count);
+  let safeRot = backup.rotations.map((q) => q.clone()).slice(0, count);
+
+  while (safePos.length < count) {
+    safePos.push(new THREE.Vector3(0, 0, -600));
+    safeScl.push(0);
+    safeRot.push(new THREE.Quaternion());
+  }
+
+  return { safePos, safeScl, safeRot };
+};
+
+// --- TRANSITION PIPELINE ---
 
 /**
  * Creates a backup clone of the current frame data before loading a new sequence.
@@ -76,19 +97,10 @@ export const finalizeMorphState = (scene, controls) => {
 
   if (targetMesh && lastTransitionBackup) {
     const count = targetMesh.count;
-    let safePos = lastTransitionBackup.positions
-      .map((v) => v.clone())
-      .slice(0, count);
-    let safeScl = [...lastTransitionBackup.scales].slice(0, count);
-    let safeRot = lastTransitionBackup.rotations
-      .map((q) => q.clone())
-      .slice(0, count);
-
-    while (safePos.length < count) {
-      safePos.push(new THREE.Vector3(0, 0, -600));
-      safeScl.push(0);
-      safeRot.push(new THREE.Quaternion());
-    }
+    const { safePos, safeScl, safeRot } = buildSafeTransitionArrays(
+      lastTransitionBackup,
+      count,
+    );
 
     targetMesh.userData.prevPositions = safePos;
     targetMesh.userData.prevScales = safeScl;

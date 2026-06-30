@@ -5,6 +5,7 @@ import {
   getGridDimensions,
   getPixelData,
 } from "./three_imageLogic.js";
+import { calculateGravityShift } from "./three_gravityLogic.js";
 import { scene, material, setCameraZoom } from "./three_sceneLogic.js";
 import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
 import logomarkUrl from "../assets/LogoMarkFull.svg";
@@ -86,11 +87,6 @@ const createWarpedGeometry = (chaosLevel, shapeType) => {
   }
 
   return geometry;
-};
-
-const calculateShift = (grad, gravity, spacing, maxShift) => {
-  const val = -grad * gravity * spacing * 0.25;
-  return Math.max(-maxShift, Math.min(maxShift, val));
 };
 
 // === GRID GENERATION ===
@@ -195,47 +191,20 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
       const smallnessInfluence =
         brightness < 0.1 ? 0 : (brightness - 0.1) / 0.9;
 
-      if (alpha > 0.01) {
-        const getSafe = (c, r) =>
-          getPixelData(
-            imgData,
-            Math.max(0, Math.min(cols - 1, c)),
-            Math.max(0, Math.min(rows - 1, r)),
-            cols,
-            rows,
-            minBright,
-            maxBright,
-          );
-
-        const neighbors = {
-          left: getSafe(col - 1, row),
-          right: getSafe(col + 1, row),
-          up: getSafe(col, row - 1),
-          down: getSafe(col, row + 1),
-        };
-
-        if (!Object.values(neighbors).some((n) => n.alpha <= 0.01)) {
-          const maxShift = spacing * 5.0;
-          const rawShiftX = calculateShift(
-            neighbors.right.brightness - neighbors.left.brightness,
-            pixelGravity,
-            spacing,
-            maxShift,
-          );
-          const rawShiftY = calculateShift(
-            neighbors.down.brightness - neighbors.up.brightness,
-            pixelGravity,
-            spacing,
-            maxShift,
-          );
-          const alignmentFactor = document.getElementById("alignmentScale")
-            ? alignmentScale / 100
-            : 1.0;
-
-          shiftX = rawShiftX * smallnessInfluence * alignmentFactor;
-          shiftY = rawShiftY * smallnessInfluence * alignmentFactor;
-        }
-      }
+      ({ shiftX, shiftY } = calculateGravityShift(
+        col,
+        row,
+        cols,
+        rows,
+        imgData,
+        minBright,
+        maxBright,
+        alpha,
+        smallnessInfluence,
+        pixelGravity,
+        spacing,
+        alignmentScale,
+      ));
 
       const isBackground = alpha <= 0.05 || brightness > 0.9;
       activeInstances[instanceIndex] = isBackground ? 0 : 1;
@@ -356,18 +325,6 @@ export const queueNextTransitionImage = (img, settings) => {
   instancedMesh.userData.nextRows = rows;
 
   return instancedMesh;
-};
-
-export const getPixelDataDirect = (
-  imgData,
-  col,
-  row,
-  cols,
-  rows,
-  minBright,
-  maxBright,
-) => {
-  return getPixelData(imgData, col, row, cols, rows, minBright, maxBright);
 };
 
 // === GETTERS ===

@@ -43,9 +43,9 @@ body {
     display: none !important;
 }
 
-.swal2-loading .cusSwal-image {
+.swal2-loading .cusSwal-image,
+.export-logo-spin {
     animation: expoSpin 1.2s cubic-bezier(0.85, 0, 0.15, 1) infinite;
-
     transform-origin: center center;
     will-change: transform;
 }
@@ -85,11 +85,10 @@ body {
     width: 24px;
     height: 24px;
     background-size: contain;
-    animation: expoSpin 1.2s cubic-bezier(0.85, 0, 0.15, 1) infinite;
 }
 
 .swal2-container.swal2-backdrop-show {
-    background: var(--color-ApplyMaroon / 80);
+    background: color-mix(in srgb, var(--color-ApplyMaroon) 80%, transparent);
     backdrop-filter: blur(2px);
 }
 
@@ -197,7 +196,6 @@ body {
 }
 
 .cusSwal-button:hover {
-    border-radius: 3rem;
     background-color: var(--color-ApplyWhite);
     color: var(--color-ApplyOrange);
     border: 2px solid var(--color-ApplyOrange);

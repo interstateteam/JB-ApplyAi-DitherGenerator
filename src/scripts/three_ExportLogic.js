@@ -3,12 +3,12 @@ import { scene, camera, renderer, composer } from "./three_sceneLogic.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import polygonClipping from "polygon-clipping";
 
-// === STATE ===
+// --- STATE ---
 
 const targetWidth = 2160;
 const targetHeight = 1440;
 
-// === EXPORT 3D ===
+// --- EXPORT 3D ---
 
 /**
  * Exports the active instanced mesh to a GLTF binary format.
@@ -54,7 +54,7 @@ export async function export3D() {
   });
 }
 
-// === RESOLUTION HELPERS ===
+// --- RESOLUTION HELPERS ---
 
 /**
  * Mutates renderer state to match export dimensions, returning original states for rollback.
@@ -110,7 +110,7 @@ function restoreOriginalResolution(originalState) {
   activeCamera.updateProjectionMatrix();
 }
 
-// === EXPORT 2D IMAGE ===
+// --- EXPORT 2D IMAGE ---
 
 /**
  * Renders the active scene into a base64 encoded JPG format.
@@ -172,7 +172,7 @@ export function exportToPNG() {
   return dataURL;
 }
 
-// === EXPORT SVG ===
+// --- EXPORT SVG ---
 
 /**
  * Extracts 2D projected geometry from the 3D instanced mesh to form a raw string block.
@@ -319,7 +319,7 @@ export async function convertToSVG() {
   return await convertToSVG_refine(rawSvg);
 }
 
-// === EXPORT VIDEO ===
+// --- EXPORT VIDEO ---
 
 /**
  * Compiles rendered frames into a seamless video loop using native WebM or FFmpeg fallbacks.

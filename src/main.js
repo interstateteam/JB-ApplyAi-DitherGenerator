@@ -1,6 +1,5 @@
-// === IMPORTS ===
+// --- IMPORTS ---
 
-import * as THREE from "three";
 import "./style.css";
 import {
   initThree,
@@ -72,6 +71,7 @@ import {
   setPendingTransition,
   snapshotOldState,
   finalizeMorphState,
+  buildSafeTransitionArrays,
 } from "./scripts/three_transitionLogic.js";
 import {
   showDelayedSpinner,
@@ -86,7 +86,7 @@ import {
   changeColourBG,
 } from "./scripts/three_UiLogic.js";
 
-// === STATE & HELPERS ===
+// --- STATE & HELPERS ---
 
 const scaleSliders = {
   pixelAmount: { min: 20, max: 4, action: "redraw" },
@@ -192,7 +192,7 @@ const loadImage = (imageSource) => {
   temporaryImage.src = imageSource;
 };
 
-// === INITIALIZATION & EVENTS ===
+// --- INITIALIZATION & EVENTS ---
 
 window.addEventListener("load", () => {
   updateSettingsCache();
@@ -372,7 +372,6 @@ window.addEventListener("load", () => {
       delete targetMesh.userData.prevPositions;
       delete targetMesh.userData.prevScales;
       delete targetMesh.userData.prevRotations;
-      delete targetMesh.userData.freezeBackground;
       setSourceGifBackup(null);
     }
   });
@@ -407,13 +406,12 @@ window.addEventListener("load", () => {
       e.preventDefault();
       const result = await promptImageExportFormat();
 
-      // Swal dismissal checks use specific properties on the result object
       if (result.dismiss) return;
 
       let svgUrl = null;
       try {
         if (result.isConfirmed) {
-          showLoadingAlert("Generating SVG", "Converting 3D to 2D...");
+          showLoadingAlert("Generating SVG", "Converting 3D to 2D");
           await new Promise((resolve) => setTimeout(resolve, 100));
 
           svgUrl = await convertToSVG();
@@ -504,19 +502,10 @@ window.addEventListener("load", () => {
 
               if (isReplayingTransition) {
                 const count = targetMesh.count;
-                let safePos = lastTransitionBackup.positions
-                  .map((v) => v.clone())
-                  .slice(0, count);
-                let safeScl = [...lastTransitionBackup.scales].slice(0, count);
-                let safeRot = lastTransitionBackup.rotations
-                  .map((q) => q.clone())
-                  .slice(0, count);
-
-                while (safePos.length < count) {
-                  safePos.push(new THREE.Vector3(0, 0, -600));
-                  safeScl.push(0);
-                  safeRot.push(new THREE.Quaternion());
-                }
+                const { safePos, safeScl, safeRot } = buildSafeTransitionArrays(
+                  lastTransitionBackup,
+                  count,
+                );
 
                 targetMesh.userData.prevPositions = safePos;
                 targetMesh.userData.prevScales = safeScl;
@@ -536,7 +525,7 @@ window.addEventListener("load", () => {
               }
 
               resetCameraView();
-              if (typeof controls !== "undefined") controls.update();
+              controls.update();
               handleAnimationSwitch(currentActiveAnimation, true);
             }
           },

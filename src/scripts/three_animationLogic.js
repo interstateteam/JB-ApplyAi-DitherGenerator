@@ -1,8 +1,19 @@
 import * as THREE from "three";
 import { scene, resetCameraView } from "./three_sceneLogic.js";
 import { getActiveMesh } from "./three_gridLogic.js";
+import {
+  easeInOutQuad,
+  easeInOutCubic,
+  easeInOutQuintic,
+  easeInOutSine,
+  easeInQuint,
+  easeOutQuint,
+  easeOutExpo,
+  pseudoRandom3,
+  pseudoRandomFrac3,
+} from "./animation_EasingLogic.js";
 
-// === SETTINGS ===
+// --- SETTINGS ---
 
 const animSettings = {
   scramble: {
@@ -37,13 +48,12 @@ const animSettings = {
   },
   default: {
     transitionFrames: 120,
-    transitionRotationDeg: 1.5,
     loopIncrement: 0.01,
     loopRotationRad: 0.00873,
   },
 };
 
-// === STATE ===
+// --- STATE ---
 
 let activeType = null;
 let isPaused = false;
@@ -58,7 +68,7 @@ const buttonMapping = {
   scramble: "scrambleAnimation",
 };
 
-// === HELPER FUNCTIONS ===
+// --- HELPER FUNCTIONS ---
 
 /**
  * Extracts coordinates for interpolation based on the current transition phase.
@@ -76,6 +86,58 @@ const getMorphState = (data, i, usePrevious) => {
     scale: data.originalScales[i],
     rot: data.originalRotations[i],
   };
+};
+
+/**
+ * Shared per-instance morph loop used by every animation handler. `computeInstance`
+ * is called once per instance and must mutate the supplied position/rotation vectors
+ * in place (to avoid per-instance allocation) and return the final scalar scale.
+ */
+const runInstanceMorph = (targetMesh, computeInstance) => {
+  const blendedPos = new THREE.Vector3();
+  const blendedRot = new THREE.Quaternion();
+  const blendedScaleVec = new THREE.Vector3();
+  const transformMatrix = new THREE.Matrix4();
+
+  for (let i = 0; i < targetMesh.count; i++) {
+    const scale = computeInstance(i, blendedPos, blendedRot);
+    blendedScaleVec.set(scale, scale, scale);
+    transformMatrix.compose(blendedPos, blendedRot, blendedScaleVec);
+    targetMesh.setMatrixAt(i, transformMatrix);
+  }
+
+  targetMesh.instanceMatrix.needsUpdate = true;
+};
+
+/**
+ * Advances the shared animation clock by one frame, respecting export-loop mode.
+ * During a video export, time freezes once `loopDuration` has been reached so the
+ * recorder can detect "one full cycle complete" and stop cleanly, rather than the
+ * animation continuing to loop in the background while frames are still being read.
+ */
+const advanceLoopFrame = (loopDuration) => {
+  if (window.isExportingLoop) {
+    if (window.exportRotatedAccumulator === undefined)
+      window.exportRotatedAccumulator = 0;
+    if (!window.isAnimationLoopComplete) {
+      time += 1;
+      if (time >= loopDuration) window.isAnimationLoopComplete = true;
+    }
+  } else {
+    time += 1;
+  }
+};
+
+/**
+ * Drives an OrbitControls rotation by the delta needed to reach `progress` of
+ * `totalRotation`, tracking the accumulated rotation on `window` so export frames
+ * advance by an exact, repeatable amount rather than real wall-clock time.
+ */
+const advanceExportRotation = (progress, totalRotation, controls) => {
+  const targetTotalRotation = progress * totalRotation;
+  const deltaToRotate = targetTotalRotation - window.exportRotatedAccumulator;
+  window.exportRotatedAccumulator = targetTotalRotation;
+  controls.rotateLeft(deltaToRotate);
 };
 
 /**
@@ -131,7 +193,7 @@ export const updateButtonUI = () => {
 
 export const getAnimationState = () => ({ activeType, isPaused });
 
-// === CONTROLS ===
+// --- CONTROLS ---
 
 /**
  * Switches the active animation type, handling play/pause toggles and resets.
@@ -147,7 +209,7 @@ export const handleAnimationSwitch = (requestedType, forceRestart = false) => {
   isPaused = false;
   time = 0;
 
-  if (typeof resetCameraView === "function") resetCameraView();
+  resetCameraView();
   resetMeshTransforms();
   updateButtonUI();
 };
@@ -160,7 +222,7 @@ export const handleFocusToggle = () => {
   isPaused = true;
   time = 0;
 
-  if (typeof resetCameraView === "function") resetCameraView();
+  resetCameraView();
   resetMeshTransforms();
   updateButtonUI();
 };
@@ -170,11 +232,11 @@ export const handleFocusToggle = () => {
  */
 export const resetAnimationTimeline = (controls) => {
   time = 0;
-  if (typeof resetCameraView === "function") resetCameraView();
+  resetCameraView();
   if (controls) updateCameraAnimation(controls);
 };
 
-// === ANIMATION ROUTINES ===
+// --- ANIMATION ROUTINES ---
 
 const handleScrambleAnimation = (targetMesh, isTransitioning) => {
   const {
@@ -185,22 +247,15 @@ const handleScrambleAnimation = (targetMesh, isTransitioning) => {
     noiseSpeed,
     rotationAmount,
   } = animSettings.scramble;
-  let progress = 0;
+  const targetFrames = isTransitioning ? transitionFrames : loopDuration;
+  let progress;
 
   if (window.isExportingLoop) {
-    if (window.exportRotatedAccumulator === undefined)
-      window.exportRotatedAccumulator = 0;
-    if (!window.isAnimationLoopComplete) {
-      time += 1;
-      const targetFrames = isTransitioning ? transitionFrames : loopDuration;
-      if (time >= targetFrames) window.isAnimationLoopComplete = true;
-      progress = time / targetFrames;
-    } else {
-      progress = 1.0;
-    }
+    const wasComplete = window.isAnimationLoopComplete;
+    advanceLoopFrame(targetFrames);
+    progress = wasComplete ? 1.0 : time / targetFrames;
   } else {
-    time += 1;
-    const targetFrames = isTransitioning ? transitionFrames : loopDuration;
+    advanceLoopFrame(targetFrames);
     progress = isTransitioning
       ? Math.min(time / targetFrames, 1.0)
       : (time % targetFrames) / targetFrames;
@@ -209,40 +264,29 @@ const handleScrambleAnimation = (targetMesh, isTransitioning) => {
   if (!targetMesh || !targetMesh.userData.originalPositions) return;
 
   const data = targetMesh.userData;
-  if (isTransitioning)
-    targetMesh.userData.freezeBackground = progress > 0.02 && progress < 0.98;
+  const eased = easeInOutQuad(progress);
+  const noiseAmp = Math.sin(eased * Math.PI);
 
-  const blendedPos = new THREE.Vector3();
-  const blendedRot = new THREE.Quaternion();
-  const blendedScaleVec = new THREE.Vector3();
-  const transformMatrix = new THREE.Matrix4();
-
-  const easeInOutQuad =
-    progress < 0.5
-      ? 2 * progress * progress
-      : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-  const noiseAmp = Math.sin(easeInOutQuad * Math.PI);
-
-  for (let i = 0; i < targetMesh.count; i++) {
-    // REFACTORED: Unified fetch for positional transition data
+  runInstanceMorph(targetMesh, (i, pos, rot) => {
     const stateA = getMorphState(data, i, isTransitioning);
     const stateB = getMorphState(data, i, false);
 
-    blendedPos.lerpVectors(stateA.pos, stateB.pos, easeInOutQuad);
-    blendedRot.slerpQuaternions(stateA.rot, stateB.rot, easeInOutQuad);
-    let currentScale = THREE.MathUtils.lerp(
-      stateA.scale,
-      stateB.scale,
-      easeInOutQuad,
-    );
+    pos.lerpVectors(stateA.pos, stateB.pos, eased);
+    rot.slerpQuaternions(stateA.rot, stateB.rot, eased);
+    let currentScale = THREE.MathUtils.lerp(stateA.scale, stateB.scale, eased);
 
-    const noiseX = Math.sin(i * 12.9898 + time * noiseSpeed) * spreadXY;
-    const noiseY = Math.sin(i * 78.233 + time * noiseSpeed) * spreadXY;
-    const noiseZ = Math.sin(i * 39.346 + time * noiseSpeed) * spreadZ;
+    const {
+      x: noiseX0,
+      y: noiseY0,
+      z: noiseZ0,
+    } = pseudoRandom3(i, time * noiseSpeed);
+    const noiseX = noiseX0 * spreadXY;
+    const noiseY = noiseY0 * spreadXY;
+    const noiseZ = noiseZ0 * spreadZ;
 
-    blendedPos.x += noiseX * noiseAmp;
-    blendedPos.y += noiseY * noiseAmp;
-    blendedPos.z += noiseZ * noiseAmp;
+    pos.x += noiseX * noiseAmp;
+    pos.y += noiseY * noiseAmp;
+    pos.z += noiseZ * noiseAmp;
 
     const randomQuat = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(
@@ -251,16 +295,13 @@ const handleScrambleAnimation = (targetMesh, isTransitioning) => {
         noiseZ * rotationAmount,
       ),
     );
-    blendedRot.slerp(randomQuat, noiseAmp * 0.5);
+    rot.slerp(randomQuat, noiseAmp * 0.5);
 
-    blendedScaleVec.set(currentScale, currentScale, currentScale);
-    transformMatrix.compose(blendedPos, blendedRot, blendedScaleVec);
-    targetMesh.setMatrixAt(i, transformMatrix);
-  }
+    return currentScale;
+  });
 
   if (isTransitioning && progress >= 1.0)
     window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
-  targetMesh.instanceMatrix.needsUpdate = true;
 };
 
 const handleImplodeAnimation = (targetMesh, isTransitioning) => {
@@ -278,24 +319,12 @@ const handleImplodeAnimation = (targetMesh, isTransitioning) => {
   const loopDuration =
     pauseNormal + implodeFrames + pauseImploded + explodeFrames;
 
-  if (window.isExportingLoop) {
-    if (window.exportRotatedAccumulator === undefined)
-      window.exportRotatedAccumulator = 0;
-    if (!window.isAnimationLoopComplete) {
-      time += 1;
-      if (time >= loopDuration) window.isAnimationLoopComplete = true;
-    }
-  } else {
-    time += 1;
-  }
+  advanceLoopFrame(loopDuration);
 
   if (targetMesh && targetMesh.userData.originalPositions) {
     const currentFrame = time % loopDuration;
     let morphFactor = 0;
     let isSecondHalf = false;
-
-    const easeInQuint = (x) => x * x * x * x * x;
-    const easeOutExpo = (x) => (x === 1 ? 1 : 1 - Math.pow(2, -10 * x));
 
     if (currentFrame < pauseNormal) {
       morphFactor = 0;
@@ -313,50 +342,28 @@ const handleImplodeAnimation = (targetMesh, isTransitioning) => {
       isSecondHalf = true;
     }
 
-    if (isTransitioning)
-      targetMesh.userData.freezeBackground = morphFactor > 0.05;
-
-    const blendedPos = new THREE.Vector3();
-    const blendedRot = new THREE.Quaternion();
-    const blendedScaleVec = new THREE.Vector3();
-    const transformMatrix = new THREE.Matrix4();
-    const implodeTarget = new THREE.Vector3();
     const data = targetMesh.userData;
+    const implodeTarget = new THREE.Vector3();
 
-    for (let i = 0; i < targetMesh.count; i++) {
-      implodeTarget.set(
-        Math.sin(i * 12.9898) * radius,
-        Math.sin(i * 78.233) * radius,
-        Math.sin(i * 39.346) * radius,
-      );
+    runInstanceMorph(targetMesh, (i, pos, rot) => {
+      const { x, y, z } = pseudoRandom3(i);
+      implodeTarget.set(x * radius, y * radius, z * radius);
 
-      // REFACTORED: Unified fetch for positional transition data
       const sourceState = getMorphState(
         data,
         i,
         isTransitioning && !isSecondHalf,
       );
 
-      blendedPos.lerpVectors(sourceState.pos, implodeTarget, morphFactor);
-      blendedRot.slerpQuaternions(
-        sourceState.rot,
-        data.gridRotations[i],
-        morphFactor,
-      );
+      pos.lerpVectors(sourceState.pos, implodeTarget, morphFactor);
+      rot.slerpQuaternions(sourceState.rot, data.gridRotations[i], morphFactor);
 
-      let currentScale =
-        sourceState.scale * Math.max(0.01, 1.0 - morphFactor * 0.99);
-
-      blendedScaleVec.set(currentScale, currentScale, currentScale);
-      transformMatrix.compose(blendedPos, blendedRot, blendedScaleVec);
-      targetMesh.setMatrixAt(i, transformMatrix);
-    }
+      return sourceState.scale * Math.max(0.01, 1.0 - morphFactor * 0.99);
+    });
 
     if (isTransitioning && currentFrame === loopDuration - 1) {
       window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
     }
-
-    targetMesh.instanceMatrix.needsUpdate = true;
   }
 };
 
@@ -379,14 +386,7 @@ const handleEasedAnimation = (targetMesh, isTransitioning, controls) => {
       progress = 1.0;
     }
 
-    const easedProgress =
-      progress < 0.5
-        ? 16 * Math.pow(progress, 5)
-        : 1 - Math.pow(-2 * progress + 2, 5) / 2;
-    const targetTotalRotation = easedProgress * Math.PI * 2;
-    const deltaToRotate = targetTotalRotation - window.exportRotatedAccumulator;
-    window.exportRotatedAccumulator = targetTotalRotation;
-    controls.rotateLeft(deltaToRotate);
+    advanceExportRotation(easeInOutQuintic(progress), Math.PI * 2, controls);
   } else {
     time += timeIncrement;
     progress = isTransitioning
@@ -412,20 +412,9 @@ const handleEasedAnimation = (targetMesh, isTransitioning, controls) => {
     )
       return;
 
-    targetMesh.userData.freezeBackground = progress > 0.05;
+    const baseMorphProgress = easeInOutQuintic(progress);
 
-    const blendedPos = new THREE.Vector3();
-    const blendedRot = new THREE.Quaternion();
-    const blendedScaleVec = new THREE.Vector3();
-    const transformMatrix = new THREE.Matrix4();
-
-    const baseMorphProgress =
-      progress < 0.5
-        ? 16 * Math.pow(progress, 5)
-        : 1 - Math.pow(-2 * progress + 2, 5) / 2;
-
-    for (let i = 0; i < targetMesh.count; i++) {
-      // REFACTORED: Unified fetch for positional transition data
+    runInstanceMorph(targetMesh, (i, pos, rot) => {
       const stateA = getMorphState(data, i, true);
       const stateB = getMorphState(data, i, false);
 
@@ -434,25 +423,13 @@ const handleEasedAnimation = (targetMesh, isTransitioning, controls) => {
         0,
         Math.min(1, baseMorphProgress + staggerOffset),
       );
-      dotProgress =
-        dotProgress < 0.5
-          ? 2 * dotProgress * dotProgress
-          : 1 - Math.pow(-2 * dotProgress + 2, 2) / 2;
+      dotProgress = easeInOutQuad(dotProgress);
 
-      blendedPos.lerpVectors(stateA.pos, stateB.pos, dotProgress);
-      blendedRot.slerpQuaternions(stateA.rot, stateB.rot, dotProgress);
-      let currentScale = THREE.MathUtils.lerp(
-        stateA.scale,
-        stateB.scale,
-        dotProgress,
-      );
+      pos.lerpVectors(stateA.pos, stateB.pos, dotProgress);
+      rot.slerpQuaternions(stateA.rot, stateB.rot, dotProgress);
+      return THREE.MathUtils.lerp(stateA.scale, stateB.scale, dotProgress);
+    });
 
-      blendedScaleVec.set(currentScale, currentScale, currentScale);
-      transformMatrix.compose(blendedPos, blendedRot, blendedScaleVec);
-      targetMesh.setMatrixAt(i, transformMatrix);
-    }
-
-    targetMesh.instanceMatrix.needsUpdate = true;
     if (progress >= 1.0)
       window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
   }
@@ -473,25 +450,12 @@ const handleBreakApartAnimation = (targetMesh, isTransitioning) => {
   const loopDuration =
     pauseNormal + explodeFrames + pauseExpanded + implodeFrames;
 
-  if (window.isExportingLoop) {
-    if (window.exportRotatedAccumulator === undefined)
-      window.exportRotatedAccumulator = 0;
-    if (!window.isAnimationLoopComplete) {
-      time += 1;
-      if (time >= loopDuration) window.isAnimationLoopComplete = true;
-    }
-  } else {
-    time += 1;
-  }
+  advanceLoopFrame(loopDuration);
 
   if (targetMesh && targetMesh.userData.originalPositions) {
     const currentFrame = time % loopDuration;
     let morphFactor = 0;
     let isSecondHalf = false;
-
-    const easeOutQuint = (x) => 1 - Math.pow(1 - x, 5);
-    const easeInOutCubic = (x) =>
-      x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 
     if (currentFrame < pauseNormal) {
       morphFactor = 0;
@@ -509,75 +473,49 @@ const handleBreakApartAnimation = (targetMesh, isTransitioning) => {
       isSecondHalf = true;
     }
 
-    if (isTransitioning)
-      targetMesh.userData.freezeBackground = morphFactor > 0.05;
-
-    const blendedPos = new THREE.Vector3();
-    const blendedRot = new THREE.Quaternion();
-    const blendedScaleVec = new THREE.Vector3();
-    const transformMatrix = new THREE.Matrix4();
-    const scatterTarget = new THREE.Vector3();
     const data = targetMesh.userData;
+    const scatterTarget = new THREE.Vector3();
 
-    for (let i = 0; i < targetMesh.count; i++) {
-      scatterTarget.set(
-        ((Math.sin(i * 12.9898) * 43758.5453) % 1) * cubeSize,
-        ((Math.sin(i * 78.233) * 43758.5453) % 1) * cubeSize,
-        ((Math.sin(i * 39.346) * 43758.5453) % 1) * cubeSize,
-      );
+    runInstanceMorph(targetMesh, (i, pos, rot) => {
+      const { x, y, z } = pseudoRandomFrac3(i);
+      scatterTarget.set(x * cubeSize, y * cubeSize, z * cubeSize);
 
-      // REFACTORED: Unified fetch for positional transition data
       const sourceState = getMorphState(
         data,
         i,
         isTransitioning && !isSecondHalf,
       );
 
-      blendedPos.lerpVectors(sourceState.pos, scatterTarget, morphFactor);
-      blendedRot.slerpQuaternions(
-        sourceState.rot,
-        data.gridRotations[i],
-        morphFactor,
-      );
+      pos.lerpVectors(sourceState.pos, scatterTarget, morphFactor);
+      rot.slerpQuaternions(sourceState.rot, data.gridRotations[i], morphFactor);
 
       let currentScale = THREE.MathUtils.lerp(
         sourceState.scale,
         data.gridScales[i],
         morphFactor,
       );
-      const zNormalized = (blendedPos.z + cubeSize) / (cubeSize * 2);
+      const zNormalized = (pos.z + cubeSize) / (cubeSize * 2);
       const zMultiplier = 0.2 + zNormalized * 3.8;
       const finalScaleMultiplier = 1.0 + (zMultiplier - 1.0) * morphFactor;
 
-      currentScale *= Math.max(0.01, finalScaleMultiplier);
-      blendedScaleVec.set(currentScale, currentScale, currentScale);
-
-      transformMatrix.compose(blendedPos, blendedRot, blendedScaleVec);
-      targetMesh.setMatrixAt(i, transformMatrix);
-    }
+      return currentScale * Math.max(0.01, finalScaleMultiplier);
+    });
 
     if (isTransitioning && currentFrame === loopDuration - 1) {
       window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
     }
-
-    targetMesh.instanceMatrix.needsUpdate = true;
   }
 };
 
 const handleDefaultAnimation = (targetMesh, isTransitioning, controls) => {
-  const {
-    transitionFrames,
-    transitionRotationDeg,
-    loopIncrement,
-    loopRotationRad,
-  } = animSettings.default;
+  const { transitionFrames, loopIncrement, loopRotationRad } =
+    animSettings.default;
 
   if (isTransitioning && targetMesh) {
     time += 1;
     const progress = Math.min(time / transitionFrames, 1.0);
 
-    targetMesh.userData.freezeBackground = progress > 0.05;
-    controls.rotateLeft(THREE.MathUtils.degToRad(transitionRotationDeg));
+    controls.rotateLeft(loopRotationRad);
 
     const data = targetMesh.userData;
     if (
@@ -588,31 +526,17 @@ const handleDefaultAnimation = (targetMesh, isTransitioning, controls) => {
     )
       return;
 
-    const blendedPos = new THREE.Vector3();
-    const blendedRot = new THREE.Quaternion();
-    const blendedScaleVec = new THREE.Vector3();
-    const transformMatrix = new THREE.Matrix4();
-    const easeInOutSine = -(Math.cos(Math.PI * progress) - 1) / 2;
+    const eased = easeInOutSine(progress);
 
-    for (let i = 0; i < targetMesh.count; i++) {
-      // REFACTORED: Unified fetch for positional transition data
+    runInstanceMorph(targetMesh, (i, pos, rot) => {
       const stateA = getMorphState(data, i, true);
       const stateB = getMorphState(data, i, false);
 
-      blendedPos.lerpVectors(stateA.pos, stateB.pos, easeInOutSine);
-      blendedRot.slerpQuaternions(stateA.rot, stateB.rot, easeInOutSine);
-      let currentScale = THREE.MathUtils.lerp(
-        stateA.scale,
-        stateB.scale,
-        easeInOutSine,
-      );
+      pos.lerpVectors(stateA.pos, stateB.pos, eased);
+      rot.slerpQuaternions(stateA.rot, stateB.rot, eased);
+      return THREE.MathUtils.lerp(stateA.scale, stateB.scale, eased);
+    });
 
-      blendedScaleVec.set(currentScale, currentScale, currentScale);
-      transformMatrix.compose(blendedPos, blendedRot, blendedScaleVec);
-      targetMesh.setMatrixAt(i, transformMatrix);
-    }
-
-    targetMesh.instanceMatrix.needsUpdate = true;
     if (progress >= 1.0)
       window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
   } else {
@@ -628,11 +552,7 @@ const handleDefaultAnimation = (targetMesh, isTransitioning, controls) => {
           window.isAnimationLoopComplete = true;
         }
 
-        const targetTotalRotation = progress * Math.PI * 2;
-        const deltaToRotate =
-          targetTotalRotation - window.exportRotatedAccumulator;
-        window.exportRotatedAccumulator = targetTotalRotation;
-        controls.rotateLeft(deltaToRotate);
+        advanceExportRotation(progress, Math.PI * 2, controls);
       }
     } else {
       controls.rotateLeft(loopRotationRad);

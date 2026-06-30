@@ -59,10 +59,9 @@ export const playGifLoop = (timestamp, scene, getSettingsFn) => {
 
   const isMorphingAway =
     activeMesh && activeMesh.userData.isTransitioning && sourceGifBackup;
-  const isBackgroundFrozen = activeMesh && activeMesh.userData.freezeBackground;
   let loopActive = false;
 
-  if (isMorphingAway && !isBackgroundFrozen) {
+  if (isMorphingAway) {
     loopActive = true;
     const backup = sourceGifBackup;
     const frame = backup.frames[backup.currentIndex];
