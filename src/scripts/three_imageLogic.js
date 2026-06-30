@@ -1,23 +1,35 @@
-// === MODULE STATE ===
-
 const sampleCanvas = document.createElement("canvas");
 const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
 
-// === CORE LOGIC ===
-
-/**
- * Draws an image to a canvas and extracts its pixel data.
- */
 export const sampleImage = (img, cols, rows) => {
   sampleCanvas.width = cols;
   sampleCanvas.height = rows;
-  sampleCtx.drawImage(img, 0, 0, cols, rows);
+  sampleCtx.clearRect(0, 0, cols, rows);
+
+  let drawWidth = cols;
+  let drawHeight = rows;
+  let drawX = 0;
+  let drawY = 0;
+
+  if (img && img.width && img.height) {
+    const imgAspect = img.width / img.height;
+    const gridAspect = cols / rows;
+
+    if (imgAspect > gridAspect) {
+      drawWidth = cols;
+      drawHeight = cols / imgAspect;
+      drawY = (rows - drawHeight) / 2;
+    } else {
+      drawHeight = rows;
+      drawWidth = rows * imgAspect;
+      drawX = (cols - drawWidth) / 2;
+    }
+  }
+
+  sampleCtx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
   return sampleCtx.getImageData(0, 0, cols, rows);
 };
 
-/**
- * Analyzes image data to find the minimum and maximum brightness values.
- */
 export const getBrightnessRange = (imgData) => {
   let minBright = 1.0;
   let maxBright = 0.0;
@@ -40,9 +52,6 @@ export const getBrightnessRange = (imgData) => {
   return { minBright, maxBright };
 };
 
-/**
- * Calculates the normalized brightness and alpha for a specific pixel coordinate.
- */
 export const getPixelData = (
   imgData,
   col,
@@ -65,23 +74,13 @@ export const getPixelData = (
   return { brightness, alpha };
 };
 
-/**
- * Determines the optimal grid dimensions to fit an image within the screen bounds.
- */
 export const getGridDimensions = (img, gridSize) => {
-  const maxCols = Math.floor(window.innerWidth / gridSize);
-  const maxRows = Math.floor(window.innerHeight / gridSize);
+  // A fixed virtual 3D space. This guarantees the exact same amount of dots
+  // for every image, entirely independent of the user's screen resolution.
+  const VIRTUAL_SIZE = 1000;
 
-  if (!img || !img.width || !img.height) {
-    return { cols: maxCols, rows: maxRows };
-  }
+  const cols = Math.floor(VIRTUAL_SIZE / gridSize);
+  const rows = Math.floor(VIRTUAL_SIZE / gridSize);
 
-  const imgAspect = img.width / img.height;
-  const screenAspect = window.innerWidth / window.innerHeight;
-
-  if (imgAspect > screenAspect) {
-    return { cols: maxCols, rows: Math.floor(maxCols / imgAspect) };
-  }
-
-  return { cols: Math.floor(maxRows * imgAspect), rows: maxRows };
+  return { cols, rows };
 };

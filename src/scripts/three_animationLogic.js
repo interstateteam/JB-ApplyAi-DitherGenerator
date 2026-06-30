@@ -13,8 +13,6 @@ import {
   pseudoRandomFrac3,
 } from "./animation_EasingLogic.js";
 
-// --- SETTINGS ---
-
 const animSettings = {
   scramble: {
     transitionFrames: 240,
@@ -34,7 +32,7 @@ const animSettings = {
     radius: 40,
   },
   eased: {
-    timeIncrement: 0.05,
+    timeIncrement: 0.06,
     totalDegrees: 360,
   },
   breakApart: {
@@ -53,12 +51,9 @@ const animSettings = {
   },
 };
 
-// --- STATE ---
-
 let activeType = null;
 let isPaused = false;
 let time = 0;
-let cachedControls = null;
 
 const buttonMapping = {
   default: "rotationAnimation",
@@ -68,11 +63,6 @@ const buttonMapping = {
   scramble: "scrambleAnimation",
 };
 
-// --- HELPER FUNCTIONS ---
-
-/**
- * Extracts coordinates for interpolation based on the current transition phase.
- */
 const getMorphState = (data, i, usePrevious) => {
   if (usePrevious) {
     return {
@@ -88,11 +78,6 @@ const getMorphState = (data, i, usePrevious) => {
   };
 };
 
-/**
- * Shared per-instance morph loop used by every animation handler. `computeInstance`
- * is called once per instance and must mutate the supplied position/rotation vectors
- * in place (to avoid per-instance allocation) and return the final scalar scale.
- */
 const runInstanceMorph = (targetMesh, computeInstance) => {
   const blendedPos = new THREE.Vector3();
   const blendedRot = new THREE.Quaternion();
@@ -109,16 +94,8 @@ const runInstanceMorph = (targetMesh, computeInstance) => {
   targetMesh.instanceMatrix.needsUpdate = true;
 };
 
-/**
- * Advances the shared animation clock by one frame, respecting export-loop mode.
- * During a video export, time freezes once `loopDuration` has been reached so the
- * recorder can detect "one full cycle complete" and stop cleanly, rather than the
- * animation continuing to loop in the background while frames are still being read.
- */
 const advanceLoopFrame = (loopDuration) => {
   if (window.isExportingLoop) {
-    if (window.exportRotatedAccumulator === undefined)
-      window.exportRotatedAccumulator = 0;
     if (!window.isAnimationLoopComplete) {
       time += 1;
       if (time >= loopDuration) window.isAnimationLoopComplete = true;
@@ -128,21 +105,6 @@ const advanceLoopFrame = (loopDuration) => {
   }
 };
 
-/**
- * Drives an OrbitControls rotation by the delta needed to reach `progress` of
- * `totalRotation`, tracking the accumulated rotation on `window` so export frames
- * advance by an exact, repeatable amount rather than real wall-clock time.
- */
-const advanceExportRotation = (progress, totalRotation, controls) => {
-  const targetTotalRotation = progress * totalRotation;
-  const deltaToRotate = targetTotalRotation - window.exportRotatedAccumulator;
-  window.exportRotatedAccumulator = targetTotalRotation;
-  controls.rotateLeft(deltaToRotate);
-};
-
-/**
- * Resets an instanced mesh to its original un-animated transformations.
- */
 export const resetMeshTransforms = () => {
   const targetMesh = getActiveMesh();
   if (!targetMesh || !targetMesh.userData?.originalPositions) return;
@@ -165,9 +127,6 @@ export const resetMeshTransforms = () => {
   targetMesh.instanceMatrix.needsUpdate = true;
 };
 
-/**
- * Updates UI styling for animation control buttons based on current state.
- */
 export const updateButtonUI = () => {
   Object.entries(buttonMapping).forEach(([type, id]) => {
     const btn = document.getElementById(id);
@@ -193,11 +152,6 @@ export const updateButtonUI = () => {
 
 export const getAnimationState = () => ({ activeType, isPaused });
 
-// --- CONTROLS ---
-
-/**
- * Switches the active animation type, handling play/pause toggles and resets.
- */
 export const handleAnimationSwitch = (requestedType, forceRestart = false) => {
   if (activeType === requestedType && !forceRestart) {
     isPaused = !isPaused;
@@ -214,9 +168,6 @@ export const handleAnimationSwitch = (requestedType, forceRestart = false) => {
   updateButtonUI();
 };
 
-/**
- * Clears the current animation and brings the focus to a paused resting state.
- */
 export const handleFocusToggle = () => {
   activeType = null;
   isPaused = true;
@@ -227,16 +178,10 @@ export const handleFocusToggle = () => {
   updateButtonUI();
 };
 
-/**
- * Resets the global animation timeline clock.
- */
-export const resetAnimationTimeline = (controls) => {
+export const resetAnimationTimeline = () => {
   time = 0;
   resetCameraView();
-  if (controls) updateCameraAnimation(controls);
 };
-
-// --- ANIMATION ROUTINES ---
 
 const handleScrambleAnimation = (targetMesh, isTransitioning) => {
   const {
@@ -367,14 +312,12 @@ const handleImplodeAnimation = (targetMesh, isTransitioning) => {
   }
 };
 
-const handleEasedAnimation = (targetMesh, isTransitioning, controls) => {
-  const { timeIncrement, totalDegrees } = animSettings.eased;
+const handleEasedAnimation = (targetMesh, isTransitioning) => {
+  const { timeIncrement } = animSettings.eased;
   const loopDuration = Math.PI * 2;
   let progress;
 
   if (window.isExportingLoop) {
-    if (window.exportRotatedAccumulator === undefined)
-      window.exportRotatedAccumulator = 0;
     if (!window.isAnimationLoopComplete) {
       time += timeIncrement;
       progress = time / loopDuration;
@@ -385,52 +328,56 @@ const handleEasedAnimation = (targetMesh, isTransitioning, controls) => {
     } else {
       progress = 1.0;
     }
-
-    advanceExportRotation(easeInOutQuintic(progress), Math.PI * 2, controls);
   } else {
     time += timeIncrement;
     progress = isTransitioning
       ? Math.min(time / loopDuration, 1.0)
       : (time % loopDuration) / loopDuration;
-
-    const velocityCurve =
-      progress < 0.5
-        ? 80 * Math.pow(progress, 4)
-        : 5 * Math.pow(2 - 2 * progress, 4);
-    const degreesThisFrame =
-      velocityCurve * (timeIncrement / loopDuration) * totalDegrees;
-    controls.rotateLeft(THREE.MathUtils.degToRad(degreesThisFrame));
   }
 
-  if (isTransitioning && targetMesh) {
+  if (targetMesh) {
     const data = targetMesh.userData;
-    if (
-      !data.prevPositions ||
-      !data.originalPositions ||
-      !data.prevRotations ||
-      !data.originalRotations
-    )
-      return;
+    if (!data.originalPositions || !data.originalRotations) return;
 
     const baseMorphProgress = easeInOutQuintic(progress);
+    const rotationAngle = baseMorphProgress * Math.PI * 2;
+    const spinQuat = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      rotationAngle,
+    );
+
+    // Prevent visual pops from -1 W quaternion flips at exactly 360 degrees
+    if (progress >= 1.0 || progress === 0.0) {
+      spinQuat.identity();
+    }
 
     runInstanceMorph(targetMesh, (i, pos, rot) => {
-      const stateA = getMorphState(data, i, true);
+      const stateA = getMorphState(data, i, isTransitioning);
       const stateB = getMorphState(data, i, false);
 
-      const staggerOffset = Math.sin(i * 0.1) * 0.2;
-      let dotProgress = Math.max(
-        0,
-        Math.min(1, baseMorphProgress + staggerOffset),
-      );
-      dotProgress = easeInOutQuad(dotProgress);
+      if (isTransitioning) {
+        const maxStagger = 0.2;
+        const staggerDelay = ((i % 10) / 9) * maxStagger;
+        let dotProgress =
+          progress < 1.0 ? (progress - staggerDelay) / (1.0 - maxStagger) : 1.0;
+        dotProgress = THREE.MathUtils.clamp(dotProgress, 0, 1);
+        dotProgress = easeInOutQuad(dotProgress);
 
-      pos.lerpVectors(stateA.pos, stateB.pos, dotProgress);
-      rot.slerpQuaternions(stateA.rot, stateB.rot, dotProgress);
-      return THREE.MathUtils.lerp(stateA.scale, stateB.scale, dotProgress);
+        pos
+          .lerpVectors(stateA.pos, stateB.pos, dotProgress)
+          .applyQuaternion(spinQuat);
+        rot
+          .slerpQuaternions(stateA.rot, stateB.rot, dotProgress)
+          .premultiply(spinQuat);
+        return THREE.MathUtils.lerp(stateA.scale, stateB.scale, dotProgress);
+      } else {
+        pos.copy(stateB.pos).applyQuaternion(spinQuat);
+        rot.copy(stateB.rot).premultiply(spinQuat);
+        return stateB.scale;
+      }
     });
 
-    if (progress >= 1.0)
+    if (isTransitioning && progress >= 1.0)
       window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
   }
 };
@@ -507,69 +454,75 @@ const handleBreakApartAnimation = (targetMesh, isTransitioning) => {
   }
 };
 
-const handleDefaultAnimation = (targetMesh, isTransitioning, controls) => {
+const handleDefaultAnimation = (targetMesh, isTransitioning) => {
   const { transitionFrames, loopIncrement, loopRotationRad } =
     animSettings.default;
 
-  if (isTransitioning && targetMesh) {
-    time += 1;
-    const progress = Math.min(time / transitionFrames, 1.0);
-
-    controls.rotateLeft(loopRotationRad);
-
+  if (targetMesh) {
     const data = targetMesh.userData;
-    if (
-      !data.prevPositions ||
-      !data.originalPositions ||
-      !data.prevRotations ||
-      !data.originalRotations
-    )
-      return;
+    if (!data.originalPositions || !data.originalRotations) return;
 
-    const eased = easeInOutSine(progress);
+    let rotationAngle = 0;
 
-    runInstanceMorph(targetMesh, (i, pos, rot) => {
-      const stateA = getMorphState(data, i, true);
-      const stateB = getMorphState(data, i, false);
+    if (isTransitioning) {
+      time += 1;
+      const progress = Math.min(time / transitionFrames, 1.0);
+      const eased = easeInOutSine(progress);
+      rotationAngle = progress * (transitionFrames * loopRotationRad);
+      const spinQuat = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        rotationAngle,
+      );
 
-      pos.lerpVectors(stateA.pos, stateB.pos, eased);
-      rot.slerpQuaternions(stateA.rot, stateB.rot, eased);
-      return THREE.MathUtils.lerp(stateA.scale, stateB.scale, eased);
-    });
+      runInstanceMorph(targetMesh, (i, pos, rot) => {
+        const stateA = getMorphState(data, i, true);
+        const stateB = getMorphState(data, i, false);
 
-    if (progress >= 1.0)
-      window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
-  } else {
-    if (window.isExportingLoop) {
-      if (window.exportRotatedAccumulator === undefined)
-        window.exportRotatedAccumulator = 0;
-      if (!window.isAnimationLoopComplete) {
-        time += loopIncrement;
-        let progress = time / (Math.PI * 2);
+        pos
+          .lerpVectors(stateA.pos, stateB.pos, eased)
+          .applyQuaternion(spinQuat);
+        rot
+          .slerpQuaternions(stateA.rot, stateB.rot, eased)
+          .premultiply(spinQuat);
+        return THREE.MathUtils.lerp(stateA.scale, stateB.scale, eased);
+      });
 
-        if (progress >= 1.0) {
-          progress = 1.0;
-          window.isAnimationLoopComplete = true;
-        }
-
-        advanceExportRotation(progress, Math.PI * 2, controls);
-      }
+      if (progress >= 1.0)
+        window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
     } else {
-      controls.rotateLeft(loopRotationRad);
+      if (window.isExportingLoop) {
+        if (!window.isAnimationLoopComplete) {
+          time += loopIncrement;
+          let progress = time / (Math.PI * 2);
+          if (progress >= 1.0) {
+            progress = 1.0;
+            window.isAnimationLoopComplete = true;
+          }
+          rotationAngle = progress * Math.PI * 2;
+        } else {
+          rotationAngle = Math.PI * 2;
+        }
+      } else {
+        time += 1;
+        rotationAngle = time * loopRotationRad;
+      }
+
+      const spinQuat = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        rotationAngle,
+      );
+
+      runInstanceMorph(targetMesh, (i, pos, rot) => {
+        const stateB = getMorphState(data, i, false);
+        pos.copy(stateB.pos).applyQuaternion(spinQuat);
+        rot.copy(stateB.rot).premultiply(spinQuat);
+        return stateB.scale;
+      });
     }
   }
 };
 
-/**
- * Primary router for triggering the active animation logic block.
- */
-export const updateCameraAnimation = (controls) => {
-  if (controls && !cachedControls) {
-    cachedControls = controls;
-    if (typeof cachedControls.saveState === "function")
-      cachedControls.saveState();
-  }
-
+export const updateCameraAnimation = () => {
   if (isPaused || !activeType) return;
 
   const targetMesh = getActiveMesh();
@@ -580,13 +533,13 @@ export const updateCameraAnimation = (controls) => {
       handleScrambleAnimation(targetMesh, isTransitioning);
       break;
     case "default":
-      handleDefaultAnimation(targetMesh, isTransitioning, controls);
+      handleDefaultAnimation(targetMesh, isTransitioning);
       break;
     case "implode":
       handleImplodeAnimation(targetMesh, isTransitioning);
       break;
     case "eased":
-      handleEasedAnimation(targetMesh, isTransitioning, controls);
+      handleEasedAnimation(targetMesh, isTransitioning);
       break;
     case "breakApart":
       handleBreakApartAnimation(targetMesh, isTransitioning);
@@ -594,9 +547,6 @@ export const updateCameraAnimation = (controls) => {
   }
 };
 
-/**
- * Centers and renders a static placeholder image cleanly onto a canvas.
- */
 export function loadImageAnimation() {
   const imgCanvas = document.getElementById("imgLoadCanvas");
   if (!imgCanvas) return;
@@ -630,3 +580,10 @@ export function loadImageAnimation() {
 
   img.src = "./src/assets/defaultImageTransparent.png";
 }
+
+export const haltAnimationKeepingState = () => {
+  activeType = null;
+  isPaused = true;
+  time = 0;
+  updateButtonUI();
+};

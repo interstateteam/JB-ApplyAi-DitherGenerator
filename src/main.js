@@ -1,5 +1,3 @@
-// --- IMPORTS ---
-
 import "./style.css";
 import {
   initThree,
@@ -46,6 +44,7 @@ import {
   resetAnimationTimeline,
   updateButtonUI,
   handleFocusToggle,
+  haltAnimationKeepingState,
 } from "./scripts/three_animationLogic.js";
 import { sampleImage } from "./scripts/three_imageLogic.js";
 import {
@@ -86,14 +85,12 @@ import {
   changeColourBG,
 } from "./scripts/three_UiLogic.js";
 
-// --- STATE & HELPERS ---
-
 const scaleSliders = {
   pixelAmount: { min: 20, max: 4, action: "redraw" },
   pixelScale: { min: 50, max: 250, action: "redraw" },
   gridScale: { min: 4, max: 12, action: "redraw" },
   pixelDistortion: { min: 0, max: 30, action: "redraw" },
-  pixelGravity: { min: 0, max: 500, action: "redraw" },
+  pixelGravity: { min: 0, max: 100, action: "redraw" },
   scaleRatio: { min: 0, max: 100, action: "redraw" },
 };
 
@@ -102,9 +99,6 @@ let currentActiveAnimation = "default";
 let currentMode = "AnimationMode";
 let cachedSettings = {};
 
-/**
- * Reads the DOM once and updates the local cache.
- */
 const updateSettingsCache = () => {
   for (const settingName in scaleSliders) {
     const range = scaleSliders[settingName];
@@ -121,9 +115,6 @@ const updateSettingsCache = () => {
 
 const getSettings = () => cachedSettings;
 
-/**
- * Single source of truth for processing raw GIF frames through a temporary canvas.
- */
 const processGifFrames = (frames, cols, rows) => {
   return frames.map((frame) => {
     const tempCanvas = document.createElement("canvas");
@@ -137,9 +128,6 @@ const processGifFrames = (frames, cols, rows) => {
   });
 };
 
-/**
- * Boilerplate for booting up the GIF player loop
- */
 const startGifPlayback = (frames, setup) => {
   setCurrentGifState(frames, setup.cols, setup.rows, setup.instancedMesh);
   currentImage = null;
@@ -155,9 +143,6 @@ const startGifPlayback = (frames, setup) => {
   playGifLoop(performance.now(), scene, getSettings);
 };
 
-/**
- * Central event wrapper for re-rendering grid topologies after a configuration change.
- */
 const redraw = () => {
   if (isPlayingGif && currentGifFrames.length > 0) {
     stopGifPlayback();
@@ -180,9 +165,6 @@ const redraw = () => {
   }
 };
 
-/**
- * Reads image source data synchronously into the context.
- */
 const loadImage = (imageSource) => {
   const temporaryImage = new Image();
   temporaryImage.onload = () => {
@@ -191,8 +173,6 @@ const loadImage = (imageSource) => {
   };
   temporaryImage.src = imageSource;
 };
-
-// --- INITIALIZATION & EVENTS ---
 
 window.addEventListener("load", () => {
   updateSettingsCache();
@@ -315,7 +295,7 @@ window.addEventListener("load", () => {
       };
 
       const triggerMorph = () => {
-        finalizeMorphState(scene, controls);
+        finalizeMorphState(scene);
         currentActiveAnimation = pendingTransitionAnimation;
         if (sourceGifBackup && !isPlayingGif) {
           requestAnimationFrame((t) => playGifLoop(t, scene, getSettings));
@@ -373,6 +353,7 @@ window.addEventListener("load", () => {
       delete targetMesh.userData.prevScales;
       delete targetMesh.userData.prevRotations;
       setSourceGifBackup(null);
+      haltAnimationKeepingState();
     }
   });
 
@@ -497,14 +478,12 @@ window.addEventListener("load", () => {
             }
 
             if (duration === "auto") {
-              window.exportRotatedAccumulator = 0;
               window.isAnimationLoopComplete = false;
 
               if (isReplayingTransition) {
-                const count = targetMesh.count;
                 const { safePos, safeScl, safeRot } = buildSafeTransitionArrays(
                   lastTransitionBackup,
-                  count,
+                  targetMesh,
                 );
 
                 targetMesh.userData.prevPositions = safePos;
@@ -512,8 +491,7 @@ window.addEventListener("load", () => {
                 targetMesh.userData.prevRotations = safeRot;
                 targetMesh.userData.isTransitioning = true;
 
-                if (typeof resetAnimationTimeline === "function")
-                  resetAnimationTimeline(controls);
+                resetAnimationTimeline();
               }
 
               window.exportTargetDuration = undefined;
@@ -553,7 +531,6 @@ window.addEventListener("load", () => {
         const spinner = document.getElementById("exportSpinner");
         if (spinner) spinner.classList.add("hidden");
         window.isExportingLoop = false;
-        window.exportRotatedAccumulator = undefined;
         window.exportTargetDuration = undefined;
         window.exportTotalDuration = undefined;
 

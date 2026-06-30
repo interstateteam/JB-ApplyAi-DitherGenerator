@@ -10,16 +10,42 @@ import { scene, material, setCameraZoom } from "./three_sceneLogic.js";
 import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
 import logomarkUrl from "../assets/LogoMarkFull.svg";
 
-// === STATE ===
-
 const dummyObject = new THREE.Object3D();
 const colorHelper = new THREE.Color();
+const eulerScratch = new THREE.Euler();
 
 let currentGeometry = null;
 let instancedMesh = null;
 let cachedLogomarkGeometry = null;
 
-// === INITIALIZATION ===
+/**
+ * Reuses an existing array of Vector3/Quaternion instances when the instance count
+ * is unchanged (the common case for repeated GIF-frame updates against the same
+ * mesh), avoiding thousands of fresh allocations per frame. Allocates fresh objects
+ * only when the count changes or no array exists yet.
+ */
+const ensureObjectArray = (existing, count, Ctor) => {
+  if (existing && existing.length === count) return existing;
+  const arr = new Array(count);
+  for (let i = 0; i < count; i++) arr[i] = new Ctor();
+  return arr;
+};
+
+const ensurePlainArray = (existing, count) =>
+  existing && existing.length === count ? existing : new Array(count);
+
+const densityPower = 1.2;
+const baseVarianceMultiplier = 1.2;
+const borderSizeMaxInfluence = 1;
+const wobbleSpreadModifier = 0.15;
+const sizeMidpoint = 1.0;
+const borderEasingPower = 1.5;
+const vertexNoiseModifier = 0.25;
+const gravityWobbleDampener = 0.8;
+const gravityDensityBoost = 0.8;
+const minStippleDensity = 0.1;
+const highlightCutoff = 0.98;
+const lightEdgeMinimum = 0.5;
 
 const initLogomarkGeometry = () => {
   const loader = new SVGLoader();
@@ -80,7 +106,7 @@ const createWarpedGeometry = (chaosLevel, shapeType) => {
       vec.fromBufferAttribute(pos, i);
       const noise =
         Math.sin(vec.x * 4) + Math.cos(vec.y * 3.6) + Math.sin(vec.z * 5.8);
-      vec.multiplyScalar(1.0 + noise * 0.3 * chaosLevel);
+      vec.multiplyScalar(1.0 + noise * vertexNoiseModifier * chaosLevel);
       pos.setXYZ(i, vec.x, vec.y, vec.z);
     }
     geometry.computeVertexNormals();
@@ -89,28 +115,17 @@ const createWarpedGeometry = (chaosLevel, shapeType) => {
   return geometry;
 };
 
-// === GRID GENERATION ===
-
-/**
- * Evaluates the required screen ratio to automatically adjust the orthographic zoom depth.
- */
 export const getResponsiveZoom = (gridScale) => {
   const currentWidth = window.innerWidth;
   const screenFactor = Math.min(currentWidth / 1920, 1);
   return (1 / gridScale) * screenFactor;
 };
 
-/**
- * Forces a recalculation of the zoom scale.
- */
 export const handleGridScaleUpdate = (newGridScale) => {
   const adjustedZoom = getResponsiveZoom(newGridScale);
   setCameraZoom(adjustedZoom);
 };
 
-/**
- * Main routine for bootstrapping a clean instanced mesh representation of the canvas matrix.
- */
 export const initThreeGrid = (imgWidth, imgHeight, settings) => {
   if (!scene) return null;
   cleanup();
@@ -127,7 +142,6 @@ export const initThreeGrid = (imgWidth, imgHeight, settings) => {
     setCameraZoom(newZoom);
   }
 
-  // REFACTORED: Utilizing the DRY helper function to calculate cols/rows
   const { cols, rows } = getGridDimensions(
     { width: imgWidth, height: imgHeight },
     pixelAmount,
@@ -148,11 +162,6 @@ export const initThreeGrid = (imgWidth, imgHeight, settings) => {
   return { cols, rows, instancedMesh };
 };
 
-// === UPDATES ===
-
-/**
- * Reads sampled pixel data and applies localized spatial transformations to mesh instancing.
- */
 export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
   if (!mesh) return;
 
@@ -166,17 +175,38 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
     alignmentScale,
   } = settings;
   const chaosLevel = (pixelDistortion || 0) / 100;
-  const gravityNorm = Math.max(0, Math.min(100, pixelGravity)) / 100;
   const spacing = pixelAmount * (gridScale / 5);
   const { minBright, maxBright } = imgData ? getBrightnessRange(imgData) : {};
 
-  const originalPositions = [];
-  const gridPositions = [];
-  const originalRotations = [];
-  const gridRotations = [];
-  const originalScales = [];
-  const gridScales = [];
-  const activeInstances = new Uint8Array(cols * rows);
+  const count = cols * rows;
+  const existing = mesh.userData || {};
+
+  const originalPositions = ensureObjectArray(
+    existing.originalPositions,
+    count,
+    THREE.Vector3,
+  );
+  const gridPositions = ensureObjectArray(
+    existing.gridPositions,
+    count,
+    THREE.Vector3,
+  );
+  const originalRotations = ensureObjectArray(
+    existing.originalRotations,
+    count,
+    THREE.Quaternion,
+  );
+  const gridRotations = ensureObjectArray(
+    existing.gridRotations,
+    count,
+    THREE.Quaternion,
+  );
+  const originalScales = ensurePlainArray(existing.originalScales, count);
+  const gridScales = ensurePlainArray(existing.gridScales, count);
+  const activeInstances =
+    existing.activeInstances && existing.activeInstances.length === count
+      ? existing.activeInstances
+      : new Uint8Array(count);
 
   let instanceIndex = 0;
 
@@ -186,12 +216,16 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
         ? getPixelData(imgData, col, row, cols, rows, minBright, maxBright)
         : { brightness: 0, alpha: 0 };
 
+      const darkness = 1.0 - brightness;
+      const isBackground = alpha <= 0.05 || brightness > highlightCutoff;
+
       let shiftX = 0,
-        shiftY = 0;
+        shiftY = 0,
+        edgeProximity = 0;
       const smallnessInfluence =
         brightness < 0.1 ? 0 : (brightness - 0.1) / 0.9;
 
-      ({ shiftX, shiftY } = calculateGravityShift(
+      ({ shiftX, shiftY, edgeProximity } = calculateGravityShift(
         col,
         row,
         cols,
@@ -206,63 +240,88 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
         alignmentScale,
       ));
 
-      const isBackground = alpha <= 0.05 || brightness > 0.9;
-      activeInstances[instanceIndex] = isBackground ? 0 : 1;
+      const gravityNorm = Math.max(0, Math.min(100, pixelGravity)) / 100;
 
-      const fadeOutFactor = 1.0 - smallnessInfluence * gravityNorm;
+      const baseStippleDensity = Math.max(
+        minStippleDensity,
+        Math.pow(darkness, densityPower),
+      );
+      const stippleDensity = Math.min(
+        1.0,
+        baseStippleDensity + gravityNorm * gravityDensityBoost * darkness,
+      );
+      const hideDot = Math.random() > stippleDensity;
+
+      activeInstances[instanceIndex] = isBackground || hideDot ? 0 : 1;
+
       const varianceWeight =
         typeof scaleRatio === "number" ? scaleRatio / 50 : 1.0;
-      const originalVariance = 0.3 + Math.pow(1.0 - brightness, 2) * 1.5;
-      const midPoint = 1.05;
+      const originalVariance =
+        0.5 + Math.pow(darkness, 2) * baseVarianceMultiplier;
+
+      const innerSize =
+        sizeMidpoint + (originalVariance - sizeMidpoint) * varianceWeight;
+      const maxBorderSize =
+        innerSize + borderSizeMaxInfluence * varianceWeight * darkness;
+
+      const edgeDarknessFactor =
+        lightEdgeMinimum + (1.0 - lightEdgeMinimum) * Math.pow(darkness, 1.5);
+      const dynamicEdgeProximity = edgeProximity * edgeDarknessFactor;
+
       const sizeModifier =
-        midPoint + (originalVariance - midPoint) * varianceWeight;
+        innerSize +
+        (maxBorderSize - innerSize) *
+          Math.pow(dynamicEdgeProximity, borderEasingPower);
 
       const baseScale = isBackground
         ? 0
-        : (pixelScale / 100) *
-          (gridScale / 5) *
-          sizeModifier *
-          Math.max(0, fadeOutFactor);
-      const wobble = 1.0 + THREE.MathUtils.randFloatSpread(0.5 * chaosLevel);
+        : (pixelScale / 100) * (gridScale / 5) * sizeModifier;
+
+      const dampenedChaos =
+        chaosLevel * (1.0 - gravityNorm * gravityWobbleDampener);
+      const wobble =
+        1.0 +
+        THREE.MathUtils.randFloatSpread(wobbleSpreadModifier * dampenedChaos);
       const finalOriginalScale = baseScale * wobble;
 
-      const objPos = new THREE.Vector3(
+      const objPos = originalPositions[instanceIndex];
+      objPos.set(
         (col - (cols - 1) / 2) * spacing + shiftX,
         (row - (rows - 1) / 2) * spacing + shiftY,
         (1.0 - brightness) * 1200 - 600,
       );
 
       const isLogomark = settings.pixelShape === "logomark";
-      const objRot = isLogomark
-        ? new THREE.Euler(0, 0, 0)
-        : new THREE.Euler(
-            Math.random() * Math.PI * 2,
-            Math.random() * Math.PI * 2,
-            Math.random() * Math.PI * 2,
-          );
+      if (isLogomark) {
+        eulerScratch.set(0, 0, 0);
+      } else {
+        eulerScratch.set(
+          Math.random() * Math.PI * 2,
+          Math.random() * Math.PI * 2,
+          Math.random() * Math.PI * 2,
+        );
+      }
 
       const spreadX = 1.6,
         spreadY = 1,
         spreadZ = 15;
       const depthStep = ((col + row) % 8) - 4;
-      const gPos = new THREE.Vector3(
+      const gPos = gridPositions[instanceIndex];
+      gPos.set(
         (col - (cols - 1) / 2) * spacing * spreadX,
         (row - (rows - 1) / 2) * spacing * spreadY,
         depthStep * spacing * spreadZ,
       );
 
-      const gRot = new THREE.Euler(0, 0, 0);
       const finalGridScale = (pixelScale / 100) * (gridScale / 5) * 0.6;
 
-      originalPositions.push(objPos);
-      gridPositions.push(gPos);
-      originalRotations.push(new THREE.Quaternion().setFromEuler(objRot));
-      gridRotations.push(new THREE.Quaternion().setFromEuler(gRot));
-      originalScales.push(finalOriginalScale);
-      gridScales.push(finalGridScale);
+      originalRotations[instanceIndex].setFromEuler(eulerScratch);
+      gridRotations[instanceIndex].identity();
+      originalScales[instanceIndex] = finalOriginalScale;
+      gridScales[instanceIndex] = finalGridScale;
 
       dummyObject.position.copy(objPos);
-      dummyObject.rotation.copy(objRot);
+      dummyObject.rotation.copy(eulerScratch);
       dummyObject.scale.setScalar(finalOriginalScale);
 
       colorHelper.setScalar(brightness);
@@ -286,9 +345,6 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
   mesh.instanceColor.needsUpdate = true;
 };
 
-/**
- * Standard trigger wrapper for applying an image instance to the view.
- */
 export const updateThreeGrid = (img, settings) => {
   const { cols, rows, instancedMesh } =
     initThreeGrid(img.width, img.height, settings) || {};
@@ -297,9 +353,6 @@ export const updateThreeGrid = (img, settings) => {
   applyImageToGrid(imgData, cols, rows, settings, instancedMesh);
 };
 
-/**
- * Extracts and holds dimensions for the incoming frame of a multi-part transition block.
- */
 export const queueNextTransitionImage = (img, settings) => {
   if (!instancedMesh) return null;
 
@@ -310,7 +363,6 @@ export const queueNextTransitionImage = (img, settings) => {
     setCameraZoom(newZoom);
   }
 
-  // REFACTORED: Utilizing the DRY helper function to calculate cols/rows
   const { cols, rows } = getGridDimensions(img, pixelAmount);
 
   const nextImgData = sampleImage(img, cols, rows);
@@ -327,9 +379,4 @@ export const queueNextTransitionImage = (img, settings) => {
   return instancedMesh;
 };
 
-// === GETTERS ===
-
-/**
- * Returns the currently active instanced mesh without needing to traverse the scene.
- */
 export const getActiveMesh = () => instancedMesh;

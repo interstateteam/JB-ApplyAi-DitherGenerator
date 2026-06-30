@@ -10,6 +10,18 @@ export let pauseControl = false;
 export let dynamicZoom = 1;
 export let composer = null;
 
+// The fixed size we set in image logic
+const VIRTUAL_SIZE = 1000;
+
+/**
+ * Calculates a dynamic multiplier so the fixed virtual grid
+ * always fits perfectly within the current browser window bounds.
+ */
+const getScreenFitZoom = () => {
+  // Lower this number to zoom in more. (e.g., 1.0 is a tight fit, 0.9 crops slightly)
+  const paddingTarget = VIRTUAL_SIZE * 0.95;
+  return Math.min(window.innerWidth, window.innerHeight) / paddingTarget;
+};
 // --- CAMERA LOGIC ---
 
 /**
@@ -27,12 +39,12 @@ export const getCameraSetup = (initialGridScale) => {
 };
 
 /**
- * Updates the camera's zoom level dynamically.
+ * Updates the camera's zoom level dynamically, factoring in screen size.
  */
 export const setCameraZoom = (zoomLevel) => {
   dynamicZoom = zoomLevel;
   if (camera) {
-    camera.zoom = dynamicZoom;
+    camera.zoom = dynamicZoom * getScreenFitZoom();
     camera.updateProjectionMatrix();
     if (controls) controls.saveState();
   }
@@ -62,8 +74,17 @@ export const setCameraClipping = (distance) => {
  */
 export const resetCameraView = () => {
   if (!camera || !controls) return;
-  controls.reset();
-  camera.zoom = dynamicZoom;
+
+  camera.position.set(0, 0, 1000);
+  camera.lookAt(0, 0, 0);
+
+  controls.target.set(0, 0, 0);
+  if (typeof controls.reset === "function") {
+    controls.reset();
+  }
+  controls.update();
+
+  camera.zoom = dynamicZoom * getScreenFitZoom();
   camera.updateProjectionMatrix();
 };
 
@@ -92,8 +113,10 @@ export const initThree = (canvasId, initialGridScale) => {
   );
 
   camera.position.set(config.position.x, config.position.y, config.position.z);
-  camera.zoom = config.zoom;
   dynamicZoom = config.zoom;
+
+  // Apply the screen-fit multiplier to the initial zoom
+  camera.zoom = dynamicZoom * getScreenFitZoom();
   camera.updateProjectionMatrix();
 
   renderer = new THREE.WebGLRenderer({
@@ -116,7 +139,7 @@ export const initThree = (canvasId, initialGridScale) => {
   const animate = () => {
     requestAnimationFrame(animate);
     if (controls) {
-      updateCameraAnimation(controls);
+      updateCameraAnimation();
       controls.update();
     }
     renderer.render(scene, camera);
@@ -127,11 +150,17 @@ export const initThree = (canvasId, initialGridScale) => {
   window.addEventListener("resize", () => {
     const width = window.innerWidth;
     const height = window.innerHeight;
-    camera.left = width / -2;
-    camera.right = width / 2;
-    camera.top = height / 2;
-    camera.bottom = height / -2;
+
+    // Retain frustum scale on resize to prevent sudden perspective jumps
+    camera.left = (width / -2) * frustumScale;
+    camera.right = (width / 2) * frustumScale;
+    camera.top = (height / 2) * frustumScale;
+    camera.bottom = (height / -2) * frustumScale;
+
+    // Recalculate zoom dynamically to fit the new window size
+    camera.zoom = dynamicZoom * getScreenFitZoom();
     camera.updateProjectionMatrix();
+
     renderer.setSize(width, height);
   });
 };

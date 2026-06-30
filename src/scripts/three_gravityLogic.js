@@ -1,7 +1,5 @@
 import { getPixelData } from "./three_imageLogic.js";
 
-// --- LIVE GRID SHIFT (used by three_gridLogic.js applyImageToGrid) ---
-
 /**
  * Computes the per-cell positional gravity shift for the main grid build pipeline.
  * This is the version actually wired into rendering — moved here from an inline
@@ -9,6 +7,15 @@ import { getPixelData } from "./three_imageLogic.js";
  * helpers further down (getResolvedPixelData / calculateOriginalGravityShift) are a
  * separate, currently unused outline-aware variant and are left untouched.
  */
+const edgeLaneDepth = 5;
+const edgePullStrength = 0.75;
+const gravityMaxShift = 5.0;
+const gravityCalcMultiplier = 0.25;
+const maxLeapMultiplier = 0.9;
+const gravityGradientDeadzone = 0.05;
+
+// --- LIVE GRID SHIFT (used by three_gridLogic.js applyImageToGrid) ---
+
 export const calculateGravityShift = (
   col,
   row,
@@ -25,11 +32,22 @@ export const calculateGravityShift = (
 ) => {
   let shiftX = 0;
   let shiftY = 0;
+  let edgeProximity = 0;
 
-  if (alpha <= 0.01) return { shiftX, shiftY };
+  if (alpha <= 0.01) return { shiftX, shiftY, edgeProximity: 1.0 };
 
-  const getSafe = (c, r) =>
-    getPixelData(
+  const self = getPixelData(
+    imgData,
+    col,
+    row,
+    cols,
+    rows,
+    minBright,
+    maxBright,
+  );
+
+  const getSafe = (c, r) => {
+    const pixel = getPixelData(
       imgData,
       Math.max(0, Math.min(cols - 1, c)),
       Math.max(0, Math.min(rows - 1, r)),
@@ -39,6 +57,46 @@ export const calculateGravityShift = (
       maxBright,
     );
 
+    if (pixel.alpha <= 0.01) {
+      return { brightness: self.brightness, alpha: 0 };
+    }
+    return pixel;
+  };
+
+  let distanceToVoid = edgeLaneDepth + 1;
+  let edgeDirX = 0;
+  let edgeDirY = 0;
+
+  for (let d = 1; d <= edgeLaneDepth; d++) {
+    let found = false;
+
+    if (getSafe(col - d, row).alpha <= 0.01) {
+      edgeDirX = -1;
+      found = true;
+    } else if (getSafe(col + d, row).alpha <= 0.01) {
+      edgeDirX = 1;
+      found = true;
+    }
+
+    if (getSafe(col, row - d).alpha <= 0.01) {
+      edgeDirY = -1;
+      found = true;
+    } else if (getSafe(col, row + d).alpha <= 0.01) {
+      edgeDirY = 1;
+      found = true;
+    }
+
+    if (found) {
+      edgeProximity = 1.0 - (d - 1) / edgeLaneDepth;
+      distanceToVoid = d;
+      break;
+    }
+  }
+
+  if (pixelGravity === 0) {
+    return { shiftX, shiftY, edgeProximity };
+  }
+
   const neighbors = {
     left: getSafe(col - 1, row),
     right: getSafe(col + 1, row),
@@ -46,13 +104,14 @@ export const calculateGravityShift = (
     down: getSafe(col, row + 1),
   };
 
-  if (Object.values(neighbors).some((n) => n.alpha <= 0.01)) {
-    return { shiftX, shiftY };
-  }
+  const leapLimit = Math.max(
+    0,
+    (distanceToVoid - 1) * spacing * maxLeapMultiplier,
+  );
+  const maxShift = Math.min(spacing * gravityMaxShift, leapLimit);
 
-  const maxShift = spacing * 5.0;
   const calcShift = (grad) => {
-    const val = -grad * pixelGravity * spacing * 0.25;
+    const val = -grad * pixelGravity * spacing * gravityCalcMultiplier;
     return Math.max(-maxShift, Math.min(maxShift, val));
   };
 
@@ -60,18 +119,35 @@ export const calculateGravityShift = (
     ? alignmentScale / 100
     : 1.0;
 
-  shiftX =
-    calcShift(neighbors.right.brightness - neighbors.left.brightness) *
-    smallnessInfluence *
-    alignmentFactor;
-  shiftY =
-    calcShift(neighbors.down.brightness - neighbors.up.brightness) *
-    smallnessInfluence *
-    alignmentFactor;
+  const rawGradX = neighbors.right.brightness - neighbors.left.brightness;
+  const rawGradY = neighbors.down.brightness - neighbors.up.brightness;
 
-  return { shiftX, shiftY };
+  const gradX = Math.abs(rawGradX) < gravityGradientDeadzone ? 0 : rawGradX;
+  const gradY = Math.abs(rawGradY) < gravityGradientDeadzone ? 0 : rawGradY;
+
+  shiftX = calcShift(gradX) * smallnessInfluence * alignmentFactor;
+  shiftY = calcShift(gradY) * smallnessInfluence * alignmentFactor;
+
+  if (edgeProximity > 0 && distanceToVoid > 1) {
+    const pullStrength =
+      edgeProximity *
+      spacing *
+      (Math.max(0, pixelGravity) / 100) *
+      edgePullStrength;
+    shiftX += edgeDirX * pullStrength;
+    shiftY += edgeDirY * pullStrength;
+  }
+
+  if (neighbors.left.alpha <= 0.01 && shiftX < 0) shiftX = 0;
+  if (neighbors.right.alpha <= 0.01 && shiftX > 0) shiftX = 0;
+  if (neighbors.up.alpha <= 0.01 && shiftY < 0) shiftY = 0;
+  if (neighbors.down.alpha <= 0.01 && shiftY > 0) shiftY = 0;
+
+  shiftX = Math.max(-leapLimit, Math.min(leapLimit, shiftX));
+  shiftY = Math.max(-leapLimit, Math.min(leapLimit, shiftY));
+
+  return { shiftX, shiftY, edgeProximity };
 };
-
 // --- PIXEL RESOLUTION ---
 
 /**
