@@ -108,7 +108,6 @@ const updateSettingsCache = () => {
       range.min + (percentage / 100) * (range.max - range.min),
     );
   }
-  cachedSettings.pixelDistortion = 25;
   const shapeSelect = document.getElementById("pixelShape");
   cachedSettings.pixelShape = shapeSelect ? shapeSelect.value : "icosahedron";
 };

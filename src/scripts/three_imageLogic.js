@@ -31,22 +31,48 @@ export const sampleImage = (img, cols, rows) => {
 };
 
 export const getBrightnessRange = (imgData) => {
-  let minBright = 1.0;
-  let maxBright = 0.0;
   const data = imgData.data;
+  const brightnessValues = [];
 
+  // 1. Gather brightness for visible pixels only
   for (let p = 0; p < data.length; p += 4) {
     const alpha = data[p + 3] / 255;
-    if (alpha > 0) {
+
+    // Synced with gridLogic's background threshold (alpha > 0.05)
+    // This stops empty canvas borders from messing up your contrast math
+    if (alpha > 0.05) {
       const r = data[p] / 255;
       const g = data[p + 1] / 255;
       const b = data[p + 2] / 255;
-      const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
 
-      if (brightness < minBright) minBright = brightness;
-      if (brightness > maxBright) maxBright = brightness;
+      let brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+
+      // ==========================================
+      // NEW: ALPHA FLATTENING
+      // ==========================================
+      // Treat semi-transparent edge pixels as if they are blending into a white background.
+      // This stops anti-aliased edge pixels from artificially registering as deep blacks.
+      brightness = brightness * alpha + 1.0 * (1.0 - alpha);
+
+      brightnessValues.push(brightness);
     }
   }
+
+  // Fallback if the image is completely blank/transparent
+  if (brightnessValues.length === 0) {
+    return { minBright: 0.0, maxBright: 1.0 };
+  }
+
+  // 2. Sort values from darkest to lightest
+  brightnessValues.sort((a, b) => a - b);
+
+  // 3. Extract the 1st and 99th percentiles instead of absolute min/max.
+  // This filters out noise and forces low-contrast images to expand across the full dot-scale range.
+  const minIndex = Math.floor(brightnessValues.length * 0.01);
+  const maxIndex = Math.floor(brightnessValues.length * 0.99);
+
+  let minBright = brightnessValues[minIndex];
+  let maxBright = brightnessValues[maxIndex];
 
   if (maxBright === minBright) maxBright += 0.001;
   return { minBright, maxBright };
@@ -67,9 +93,24 @@ export const getPixelData = (
   const b = imgData.data[pixelIndex + 2] / 255;
   const alpha = imgData.data[pixelIndex + 3] / 255;
 
+  // 1. Calculate standard perceptual brightness
   let brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+
+  // ==========================================
+  // NEW: ALPHA FLATTENING
+  // ==========================================
+  // If an edge pixel is 10% opaque, this math forces it to be 90% white.
+  // This naturally creates a flawless dot-size gradient at the edge of shapes!
+  brightness = brightness * alpha + 1.0 * (1.0 - alpha);
+
+  // 2. Normalize based on our 1st/99th percentiles
   brightness = (brightness - minBright) / (maxBright - minBright);
   brightness = Math.max(0.0, Math.min(1.0, brightness));
+
+  const SHADOW_DETAIL_CURVE = 0.6;
+
+  // Apply the curve to bend the brightness values
+  brightness = Math.pow(brightness, SHADOW_DETAIL_CURVE);
 
   return { brightness, alpha };
 };

@@ -18,12 +18,6 @@ let currentGeometry = null;
 let instancedMesh = null;
 let cachedLogomarkGeometry = null;
 
-/**
- * Reuses an existing array of Vector3/Quaternion instances when the instance count
- * is unchanged (the common case for repeated GIF-frame updates against the same
- * mesh), avoiding thousands of fresh allocations per frame. Allocates fresh objects
- * only when the count changes or no array exists yet.
- */
 const ensureObjectArray = (existing, count, Ctor) => {
   if (existing && existing.length === count) return existing;
   const arr = new Array(count);
@@ -35,17 +29,25 @@ const ensurePlainArray = (existing, count) =>
   existing && existing.length === count ? existing : new Array(count);
 
 const densityPower = 1.2;
-const baseVarianceMultiplier = 1.2;
-const borderSizeMaxInfluence = 1;
 const wobbleSpreadModifier = 0.15;
 const sizeMidpoint = 1.0;
-const borderEasingPower = 1.5;
 const vertexNoiseModifier = 0.25;
 const gravityWobbleDampener = 0.8;
 const gravityDensityBoost = 0.8;
 const minStippleDensity = 0.1;
 const highlightCutoff = 0.98;
-const lightEdgeMinimum = 0.5;
+
+const pixelDistortion = 40;
+
+const baseVarianceMultiplier = 2; // Multiplier for base variance (controls randomness)
+
+const borderBoostMax = 1; // Adjusted to 0.15 for visibility now that the math is normalized
+const borderFalloffCurve = 5; // Smooths the transition from the edge down to the inner dots
+
+const maxGravityInfluence = 0.5; // Controls the slider ceiling (100% slider = this value)
+const jitterSpreadFactor = 2.0; // How many grid rows/cols away a dot can randomly jump
+const darknessExponent = 1; // Higher = chaos isolates to pure blacks. Lower = chaos bleeds into midtones/whites.
+const attractionStrength = 0.5; // How aggressively dots pull toward darker neighbors (magnetic force)
 
 const initLogomarkGeometry = () => {
   const loader = new SVGLoader();
@@ -133,8 +135,9 @@ export const initThreeGrid = (imgWidth, imgHeight, settings) => {
   material.side = THREE.DoubleSide;
   material.needsUpdate = true;
 
-  const { pixelAmount, pixelDistortion, gridScale, pixelShape } = settings;
-  const chaosLevel = (pixelDistortion || 0) / 100;
+  const { pixelAmount, gridScale, pixelShape } = settings;
+
+  const chaosLevel = pixelDistortion / 100;
   const shapeType = pixelShape || "icosahedron";
 
   if (settings && settings.gridScale) {
@@ -169,7 +172,6 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
     pixelAmount,
     pixelScale,
     gridScale,
-    pixelDistortion,
     pixelGravity = 0,
     scaleRatio,
     alignmentScale,
@@ -210,11 +212,33 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
 
   let instanceIndex = 0;
 
+  const brightnessCache = new Float32Array(count);
+  const alphaCache = new Float32Array(count);
+
+  if (imgData) {
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        const pData = getPixelData(
+          imgData,
+          c,
+          r,
+          cols,
+          rows,
+          minBright,
+          maxBright,
+        );
+        const cacheIndex = r * cols + c;
+        brightnessCache[cacheIndex] = pData.brightness;
+        alphaCache[cacheIndex] = pData.alpha;
+      }
+    }
+  }
+
   for (let col = 0; col < cols; col++) {
     for (let row = 0; row < rows; row++) {
-      const { brightness, alpha } = imgData
-        ? getPixelData(imgData, col, row, cols, rows, minBright, maxBright)
-        : { brightness: 0, alpha: 0 };
+      const cacheIndex = row * cols + col;
+      const brightness = imgData ? brightnessCache[cacheIndex] : 0;
+      const alpha = imgData ? alphaCache[cacheIndex] : 0;
 
       const darkness = 1.0 - brightness;
       const isBackground = alpha <= 0.05 || brightness > highlightCutoff;
@@ -256,38 +280,111 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
 
       const varianceWeight =
         typeof scaleRatio === "number" ? scaleRatio / 50 : 1.0;
+
       const originalVariance =
         0.5 + Math.pow(darkness, 2) * baseVarianceMultiplier;
 
       const innerSize =
         sizeMidpoint + (originalVariance - sizeMidpoint) * varianceWeight;
-      const maxBorderSize =
-        innerSize + borderSizeMaxInfluence * varianceWeight * darkness;
 
-      const edgeDarknessFactor =
-        lightEdgeMinimum + (1.0 - lightEdgeMinimum) * Math.pow(darkness, 1.5);
-      const dynamicEdgeProximity = edgeProximity * edgeDarknessFactor;
+      const patchFrequency = 0.3; // Lower = bigger patches, Higher = smaller patches
+      const spatialNoise =
+        (Math.sin(col * patchFrequency) +
+          Math.cos(row * patchFrequency) +
+          Math.sin((col + row) * (patchFrequency * 0.5))) /
+        3;
 
-      const sizeModifier =
-        innerSize +
-        (maxBorderSize - innerSize) *
-          Math.pow(dynamicEdgeProximity, borderEasingPower);
+      const normalizedNoise = (spatialNoise + 1) / 2;
+
+      const stableSize = sizeMidpoint + Math.pow(darkness, 2) * varianceWeight;
+
+      // 2. Inverse size weighting: Smaller dots get a larger multiplier ceiling.
+      const sizeWeight = Math.max(0, 2 - stableSize);
+
+      const normalizedFalloff = borderFalloffCurve * Math.max(0.5, stableSize);
+      const edgeIntensity = Math.pow(edgeProximity, normalizedFalloff);
+
+      const organicEdgeBlend = 0.3 + normalizedNoise * 0.7;
+
+      const borderMultiplier =
+        1.0 + borderBoostMax * sizeWeight * edgeIntensity * organicEdgeBlend;
+
+      let finalDotSize = innerSize * borderMultiplier;
+
+      const maxEdgeSize = 1.2;
+      const dynamicCap = maxEdgeSize + (1.0 - edgeProximity) * 10.0;
+
+      // Clamp the size to ensure it never exceeds our dynamic threshold
+      finalDotSize = Math.min(finalDotSize, dynamicCap);
 
       const baseScale = isBackground
         ? 0
-        : (pixelScale / 100) * (gridScale / 5) * sizeModifier;
+        : (pixelScale / 100) * (gridScale / 5) * finalDotSize;
+
+      const dotPixelDistortion =
+        15 + Math.pow(normalizedNoise, 2) * (pixelDistortion - 15);
+      const dotChaosLevel = dotPixelDistortion / 100;
 
       const dampenedChaos =
-        chaosLevel * (1.0 - gravityNorm * gravityWobbleDampener);
-      const wobble =
-        1.0 +
-        THREE.MathUtils.randFloatSpread(wobbleSpreadModifier * dampenedChaos);
+        dotChaosLevel * (1.0 - gravityNorm * gravityWobbleDampener);
+
+      const wobble = 1.0 + spatialNoise * wobbleSpreadModifier * dampenedChaos;
       const finalOriginalScale = baseScale * wobble;
 
+      const gravityInfluence = gravityNorm * maxGravityInfluence;
+
+      // 1. Random Jitter
+      const maxJitterDistance = spacing * jitterSpreadFactor;
+      const darkJitterX =
+        THREE.MathUtils.randFloatSpread(maxJitterDistance) *
+        Math.pow(darkness, darknessExponent) *
+        gravityInfluence;
+      const darkJitterY =
+        THREE.MathUtils.randFloatSpread(maxJitterDistance) *
+        Math.pow(darkness, darknessExponent) *
+        gravityInfluence;
+
+      // 2. Neighbor Attraction
+      let darkPullX = 0;
+      let darkPullY = 0;
+
+      const neighborOffsets = [
+        { x: 1, y: 0 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 0, y: -1 },
+        { x: 1, y: 1 },
+        { x: -1, y: -1 },
+        { x: 1, y: -1 },
+        { x: -1, y: 1 },
+      ];
+
+      neighborOffsets.forEach((offset) => {
+        const nCol = col + offset.x;
+        const nRow = row + offset.y;
+
+        if (nCol >= 0 && nCol < cols && nRow >= 0 && nRow < rows) {
+          const nIndex = nRow * cols + nCol;
+          const neighborBrightness = imgData ? brightnessCache[nIndex] : 1;
+          const neighborDarkness = 1.0 - neighborBrightness;
+
+          if (neighborDarkness > darkness) {
+            const pullStrength =
+              (neighborDarkness - darkness) *
+              spacing *
+              attractionStrength *
+              gravityInfluence;
+            darkPullX += offset.x * pullStrength;
+            darkPullY += offset.y * pullStrength;
+          }
+        }
+      });
+
+      // 3. Final Position Assembly
       const objPos = originalPositions[instanceIndex];
       objPos.set(
-        (col - (cols - 1) / 2) * spacing + shiftX,
-        (row - (rows - 1) / 2) * spacing + shiftY,
+        (col - (cols - 1) / 2) * spacing + shiftX + darkJitterX + darkPullX,
+        (row - (rows - 1) / 2) * spacing + shiftY + darkJitterY + darkPullY,
         (1.0 - brightness) * 1200 - 600,
       );
 
