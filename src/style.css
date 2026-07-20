@@ -20,14 +20,14 @@
 }
 
 @theme {
-    --color-ApplyDark: #222222;
-    --color-ApplyOrange: #f43b00;
-    --color-ApplyWhite: #e9e8e6;
-    --color-ApplyMaroon: #5a0513;
+    --color-ApplyDark: #27110e;
+    --color-ApplyOrange: #ff1f20;
+    --color-ApplyWhite: #fffcf4;
+    --color-ApplyMaroon: #4c1515;
 
-    --font-AlbraLight: AlbraFont-light;
+    --font-AlbraLight: AlbraFont-medium;
     --font-AlbraBold: AlbraFont-bold;
-    --font-AlbraSans: AlbraFont-medium;
+    --font-AlbraSans: AlbraFont-light;
 }
 
 body {

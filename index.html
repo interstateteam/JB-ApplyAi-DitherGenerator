@@ -22,7 +22,7 @@
         </div>
 
         <!-- OPTIONAL: Page Decoration -->
-        <img
+        <!--<img
             class="cus-pageDeco absolute -top-20 -left-20 w-32 z-1 rotate-225 -scale-y-100"
             src="src/assets/LogoMarkShape1.svg"
         />
@@ -37,7 +37,7 @@
         <img
             class="cus-pageDeco absolute -right-20 -bottom-20 w-32 z-1 rotate-45 -scale-y-100"
             src="src/assets/LogoMarkShape1.svg"
-        />
+        />-->
 
         <!-- Control Box -->
         <div
@@ -48,7 +48,7 @@
             >
                 <!-- Intro -->
                 <img src="src/assets/LogoApplyAI.svg" class="px-8 pb-4" />
-                <h1 class="text-base text-center">
+                <h1 class="text-sm text-center">
                     Click and drag in the orange space to pan around the object.
                     Upload a PNG or GIF that has a clear subject with good
                     contrast and a transparent background.
@@ -84,7 +84,7 @@
 
                         <select
                             id="modeSelection"
-                            class="appearance-none w-full h-full text-center bg-transparent cursor-pointer font-AlbraSans text-sm select-none outline-none pl-12 pr-4 leading-10.5 transition-all duration-100 ease-out hover:text-ApplyOrange hover:scale-105"
+                            class="appearance-none w-full h-full text-center bg-transparent cursor-pointer font-AlbraLight text-sm select-none outline-none pl-12 pr-4 leading-10.5 transition-all duration-100 ease-out hover:text-ApplyOrange hover:scale-105"
                         >
                             <option value="" disabled selected hidden>
                                 Mode Selection
@@ -108,9 +108,7 @@
                 </div>
 
                 <!-- Animation Presets -->
-                <div
-                    class="flex flex-row justify-center items-center text-applyDark cursor-default my-6"
-                >
+                <div class="flex flex-row justify-center items-center text-applyDark cursor-default my-6">
                     <div
                         id="focusCamera"
                         class="group w-20 place-items-center place-content-center cursor-default"
@@ -171,6 +169,17 @@
                             class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
                         ></i>
                     </div>
+
+                    <!-- NEW: Spin & Explode Animation Button -->
+                    <div
+                        id="spinExplodeAnimation"
+                        class="group w-20 place-items-center place-content-center cursor-pointer"
+                    >
+                        <i
+                            data-lucide="orbit"
+                            class="transition-all duration-300 ease-in-out group-hover:scale-125 group-hover:text-ApplyOrange w-8 h-8"
+                        ></i>
+                    </div>
                 </div>
 
                 <!-- Slider Controls -->
@@ -189,7 +198,7 @@
                         id="pixelAmount"
                         min="0"
                         max="100"
-                        value="100"
+                        value="96"
                         step="1"
                         class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                     />
@@ -209,7 +218,7 @@
                         id="pixelScale"
                         min="0"
                         max="100"
-                        value="15"
+                        value="70"
                         step="1"
                         class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                     />
@@ -232,7 +241,7 @@
                         id="scaleRatio"
                         min="0"
                         max="100"
-                        value="80"
+                        value="30"
                         step="1"
                         class="appearance-none cursor-pointer accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                     />
@@ -255,7 +264,30 @@
                         id="pixelGravity"
                         min="0"
                         max="100"
-                        value="50"
+                        value="5"
+                        step="1"
+                        class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
+                    />
+                </div>
+
+                <div class="flex flex-col gap-4">
+                    <label
+                        for="whiteCutoff"
+                        class="flex flex-col text-center justify-between font-medium text-black uppercase leading-8 tracking-wider select-none"
+                    >
+                        <span class="font-AlbraLight text-xl"
+                            >White Threshold</span
+                        >
+                        <span class="font-AlbraMedium">
+                            Amount of white space that appears</span
+                        >
+                    </label>
+                    <input
+                        type="range"
+                        id="whiteCutoff"
+                        min="0"
+                        max="100"
+                        value="20"
                         step="1"
                         class="appearance-none cursor- accent-ApplyOrange bg-ApplyDark h-[0.08vh] w-[75%] mx-auto"
                     />
@@ -275,7 +307,7 @@
 
                         <select
                             id="pixelShape"
-                            class="appearance-none w-full h-full text-center bg-transparent cursor-pointer font-AlbraSans text-sm select-none outline-none pl-12 pr-4 leading-10.5 transition-all duration-100 ease-out hover:text-ApplyOrange hover:scale-105"
+                            class="appearance-none w-full h-full text-center bg-transparent cursor-pointer font-AlbraLight text-sm select-none outline-none pl-12 pr-4 leading-10.5 transition-all duration-100 ease-out hover:text-ApplyOrange hover:scale-105"
                         >
                             <option value="" disabled selected hidden>
                                 Shape
@@ -296,10 +328,10 @@
 
                         <select
                             id="cus-bgChoice"
-                            class="appearance-none w-full h-full text-center bg-transparent cursor-pointer font-AlbraSans text-sm select-none outline-none pl-12 pr-4 leading-10.5 transition-all duration-100 ease-out hover:text-ApplyOrange hover:scale-105"
+                            class="appearance-none w-full h-full text-center bg-transparent cursor-pointer font-AlbraLight text-sm select-none outline-none pl-12 pr-4 leading-10.5 transition-all duration-100 ease-out hover:text-ApplyOrange hover:scale-105"
                         >
                             <option
-                                value="ColourOrange"
+                                value="ColourWhite"
                                 disabled
                                 selected
                                 hidden
@@ -307,11 +339,11 @@
                                 Backdrop
                             </option>
 
-                            <option value="ColourOrange">
-                                Orange (Default)
+                            <option value="ColourWhite">
+                                White (Default)
                             </option>
                             <option value="ColourBlack">Black</option>
-                            <option value="ColourWhite">White</option>
+                            <option value="ColourOrange">Orange</option>
                             <option value="ColourMaroon">Maroon</option>
                         </select>
                     </div>
@@ -383,7 +415,7 @@
         <img
             id="defaultImage"
             class="hidden"
-            src="./src/assets/defaultImageTransparent.png"
+            src="./src/assets/Wheel_Asset.png"
         />
 
         <!-- Javascript Code Call -->

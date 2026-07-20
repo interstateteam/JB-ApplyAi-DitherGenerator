@@ -122,6 +122,7 @@ export const initThree = (canvasId, initialGridScale) => {
   renderer = new THREE.WebGLRenderer({
     canvas: htmlCanvas,
     antialias: true,
+    preserveDrawingBuffer: true,
     alpha: true,
   });
 

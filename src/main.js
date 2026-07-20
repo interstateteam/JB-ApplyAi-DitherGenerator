@@ -30,6 +30,7 @@ import {
   Video,
   ChevronDown,
   Images,
+  Orbit,
 } from "lucide";
 import {
   export3D,
@@ -86,12 +87,13 @@ import {
 } from "./scripts/three_UiLogic.js";
 
 const scaleSliders = {
-  pixelAmount: { min: 20, max: 4, action: "redraw" },
-  pixelScale: { min: 50, max: 250, action: "redraw" },
-  gridScale: { min: 4, max: 12, action: "redraw" },
+  pixelAmount: { min: 20, max: 3, action: "redraw" },
+  pixelScale: { min: 50, max: 200, action: "redraw" },
+  gridScale: { min: 8, max: 12, action: "redraw" },
   pixelDistortion: { min: 0, max: 30, action: "redraw" },
   pixelGravity: { min: 0, max: 100, action: "redraw" },
-  scaleRatio: { min: 0, max: 100, action: "redraw" },
+  scaleRatio: { min: 100, max: 50, action: "redraw" },
+  whiteCutoff: { min: -10, max: 30, action: "redraw" },
 };
 
 let currentImage = null;
@@ -233,6 +235,9 @@ window.addEventListener("load", () => {
   document
     .getElementById("scrambleAnimation")
     .addEventListener("click", () => handleAnimButtonClick("scramble"));
+  document
+    .getElementById("spinExplodeAnimation")
+    .addEventListener("click", () => handleAnimButtonClick("spinExplode"));
 
   document.getElementById("pickImage").addEventListener("change", async (e) => {
     const file = e.target.files[0];
@@ -595,6 +600,7 @@ window.addEventListener("load", () => {
       Video,
       ChevronDown,
       Images,
+      Orbit,
     },
   });
   updateButtonUI();

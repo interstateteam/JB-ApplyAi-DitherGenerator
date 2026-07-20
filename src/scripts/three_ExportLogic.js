@@ -11,7 +11,7 @@ const targetHeight = 1440;
 // --- EXPORT 3D ---
 
 /**
- * Exports the active instanced mesh to a GLTF binary format.
+ * Exports the active instanced mesh to a GLTF binary format with material transparency enabled.
  */
 export async function export3D() {
   return new Promise((resolve, reject) => {
@@ -28,6 +28,10 @@ export async function export3D() {
         const scale = new THREE.Vector3();
         const activeInstances = object.userData.activeInstances;
 
+        // Clone material and ensure transparency flags are preserved for GLTF exporter
+        const exportMat = object.material.clone();
+        exportMat.transparent = true;
+
         for (let i = 0; i < count; i++) {
           if (activeInstances && activeInstances[i] === 0) continue;
 
@@ -36,7 +40,7 @@ export async function export3D() {
 
           if (scale.x <= 0.0001) continue;
 
-          const dummyMesh = new THREE.Mesh(object.geometry, object.material);
+          const dummyMesh = new THREE.Mesh(object.geometry, exportMat);
           dummyMesh.applyMatrix4(matrix);
           exportGroup.add(dummyMesh);
         }
@@ -70,10 +74,14 @@ function setupExportResolution(tWidth, tHeight) {
     aspect: activeCamera.aspect,
     left: activeCamera.left,
     right: activeCamera.right,
+    clearColor: new THREE.Color(),
+    clearAlpha: renderer.getClearAlpha(),
     activeCamera,
   };
 
   renderer.getSize(originalState.size);
+  renderer.getClearColor(originalState.clearColor);
+
   renderer.setSize(tWidth, tHeight, false);
 
   if (composer) composer.setSize(tWidth, tHeight);
@@ -96,9 +104,11 @@ function setupExportResolution(tWidth, tHeight) {
  * Rolls back resolution modifications applied during export routines.
  */
 function restoreOriginalResolution(originalState) {
-  const { activeCamera } = originalState;
+  const { activeCamera, clearColor, clearAlpha } = originalState;
   renderer.setSize(originalState.size.x, originalState.size.y, false);
   if (composer) composer.setSize(originalState.size.x, originalState.size.y);
+
+  renderer.setClearColor(clearColor, clearAlpha);
 
   if (activeCamera.isPerspectiveCamera) {
     activeCamera.aspect = originalState.aspect;
@@ -122,7 +132,7 @@ export function exportToJPG() {
   const canvasContainer = renderer.domElement.parentElement;
   const currentBgColor = canvasContainer
     ? window.getComputedStyle(canvasContainer).backgroundColor
-    : "0xf43b00";
+    : "#f43b00";
   const originalBackground = scene.background;
 
   scene.background = new THREE.Color(currentBgColor);
@@ -143,34 +153,33 @@ export function exportToJPG() {
 /**
  * Renders the active scene into a transparent base64 encoded PNG format.
  */
-export function exportToPNG() {
-  if (!scene || !renderer || !camera) return null;
+ export function exportToPNG() {
+   if (!scene || !renderer || !camera) return null;
 
-  const originalState = setupExportResolution(targetWidth, targetHeight);
-  const originalBackground = scene.background;
-  const originalClearAlpha = renderer.getClearAlpha();
+   const originalState = setupExportResolution(targetWidth, targetHeight);
+   const originalBackground = scene.background;
+   const originalFog = scene.fog; // 1. Store original fog
 
-  scene.background = null;
-  renderer.setClearAlpha(0);
+   // 2. Force transparent clear state & disable fog
+   scene.background = null;
+   scene.fog = null;
+   renderer.setClearColor(0x000000, 0);
 
-  if (composer) {
-    if (composer.readBuffer)
-      composer.readBuffer.texture.format = THREE.RGBAFormat;
-    if (composer.writeBuffer)
-      composer.writeBuffer.texture.format = THREE.RGBAFormat;
-    composer.render();
-  } else {
-    renderer.render(scene, originalState.activeCamera);
-  }
+   // 3. CRITICAL: Explicitly clear color, depth, and stencil buffers before rendering!
+   renderer.clear(true, true, true);
 
-  const dataURL = renderer.domElement.toDataURL("image/png");
+   // 4. Bypass composer to preserve WebGL alpha buffer
+   renderer.render(scene, originalState.activeCamera);
 
-  scene.background = originalBackground;
-  renderer.setClearAlpha(originalClearAlpha);
-  restoreOriginalResolution(originalState);
+   const dataURL = renderer.domElement.toDataURL("image/png");
 
-  return dataURL;
-}
+   // 5. Restore scene state
+   scene.background = originalBackground;
+   scene.fog = originalFog;
+   restoreOriginalResolution(originalState);
+
+   return dataURL;
+ }
 
 // --- EXPORT SVG ---
 
@@ -178,18 +187,20 @@ export function exportToPNG() {
  * Extracts 2D projected geometry from the 3D instanced mesh to form a raw string block.
  */
 function convertToSVG_export() {
-  const canvasWidth = window.innerWidth;
-  const canvasHeight = window.innerHeight;
+  const originalState = setupExportResolution(targetWidth, targetHeight);
+  scene.updateMatrixWorld(true);
+  camera.updateMatrixWorld(true);
+
   const matrix = new THREE.Matrix4();
   const instanceScale = new THREE.Vector3();
   const vector = new THREE.Vector3();
   const svgPaths = [];
 
-  camera.updateMatrixWorld();
-
   scene.traverse((object) => {
     if (!object.isInstancedMesh) return;
-    const posAttr = object.geometry.attributes.position;
+    const geometry = object.geometry;
+    const posAttr = geometry.attributes.position;
+    const indexAttr = geometry.index;
     const activeInstances = object.userData.activeInstances;
 
     for (let i = 0; i < object.count; i++) {
@@ -202,22 +213,39 @@ function convertToSVG_export() {
       if (instanceScale.x <= 0.0001) continue;
 
       const pathPoints = [];
-      for (let v = 0; v < posAttr.count; v++) {
-        vector.fromBufferAttribute(posAttr, v);
-        vector.applyMatrix4(matrix);
-        vector.project(camera);
 
-        const x = (vector.x + 1) * 0.5 * canvasWidth;
-        const y = -(vector.y - 1) * 0.5 * canvasHeight;
-        pathPoints.push(
-          `${v === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`,
-        );
+      if (indexAttr) {
+        for (let f = 0; f < indexAttr.count; f++) {
+          const vertexIndex = indexAttr.getX(f);
+          vector.fromBufferAttribute(posAttr, vertexIndex);
+          vector.applyMatrix4(matrix);
+          vector.project(camera);
+
+          const x = (vector.x + 1) * 0.5 * targetWidth;
+          const y = -(vector.y - 1) * 0.5 * targetHeight;
+          const isFirst = f % 3 === 0;
+          pathPoints.push(`${isFirst ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`);
+        }
+      } else {
+        for (let v = 0; v < posAttr.count; v++) {
+          vector.fromBufferAttribute(posAttr, v);
+          vector.applyMatrix4(matrix);
+          vector.project(camera);
+
+          const x = (vector.x + 1) * 0.5 * targetWidth;
+          const y = -(vector.y - 1) * 0.5 * targetHeight;
+          const isFirst = v % 3 === 0;
+          pathPoints.push(`${isFirst ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`);
+        }
       }
+
       svgPaths.push(`<path d="${pathPoints.join(" ")} Z" fill="black" />`);
     }
   });
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">${svgPaths.join("\n")}</svg>`;
+  restoreOriginalResolution(originalState);
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${targetWidth} ${targetHeight}" width="${targetWidth}" height="${targetHeight}">${svgPaths.join("\n")}</svg>`;
 }
 
 /**
@@ -227,10 +255,8 @@ async function convertToSVG_refine(svgString) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(svgString, "image/svg+xml");
   const paths = Array.from(doc.querySelectorAll("path"));
-  const canvasWidth =
-    doc.documentElement.getAttribute("width") || window.innerWidth;
-  const canvasHeight =
-    doc.documentElement.getAttribute("height") || window.innerHeight;
+  const canvasWidth = doc.documentElement.getAttribute("width") || targetWidth;
+  const canvasHeight = doc.documentElement.getAttribute("height") || targetHeight;
   const finalSvgPaths = [];
   const chunkSize = 1000;
 
@@ -250,49 +276,50 @@ async function convertToSVG_refine(svgString) {
         const pA = [Number(coords[j]), Number(coords[j + 1])];
         const pB = [Number(coords[j + 2]), Number(coords[j + 3])];
         const pC = [Number(coords[j + 4]), Number(coords[j + 5])];
-        const signedArea =
-          (pB[0] - pA[0]) * (pC[1] - pA[1]) - (pC[0] - pA[0]) * (pB[1] - pA[1]);
 
-        if (signedArea < 0.00001) continue;
-        triangles.push([[pA, pB, pC, pA]]);
+        const signedArea = (pB[0] - pA[0]) * (pC[1] - pA[1]) - (pC[0] - pA[0]) * (pB[1] - pA[1]);
+
+        if (Math.abs(signedArea) < 0.000001) continue;
+
+        const validTriangle = signedArea > 0 ? [pA, pB, pC, pA] : [pA, pC, pB, pA];
+        triangles.push([validTriangle]);
       }
 
       if (triangles.length === 0) return;
 
-      let unified = null;
+      let unified = [];
       try {
         unified = polygonClipping.union(...triangles);
       } catch (e) {
-        unified = [];
-        let successfulMerges = 0;
         for (let k = 0; k < triangles.length; k++) {
           if (unified.length === 0) {
             unified = [triangles[k]];
-            successfulMerges++;
             continue;
           }
           try {
             unified = polygonClipping.union(unified, triangles[k]);
-            successfulMerges++;
-          } catch (err) {}
+          } catch (err) {
+            unified.push(triangles[k]);
+          }
         }
-        if (successfulMerges < 5) unified = null;
       }
 
-      if (unified) {
+      if (unified && unified.length > 0) {
         const unifiedPathData = [];
         unified.forEach((polygon) => {
-          const outerRing = polygon[0];
-          outerRing.forEach((pt, idx) => {
-            unifiedPathData.push(
-              `${idx === 0 ? "M" : "L"}${pt[0].toFixed(2)} ${pt[1].toFixed(2)}`,
-            );
+          polygon.forEach((ring) => {
+            ring.forEach((pt, idx) => {
+              unifiedPathData.push(
+                `${idx === 0 ? "M" : "L"}${pt[0].toFixed(2)} ${pt[1].toFixed(2)}`
+              );
+            });
+            unifiedPathData.push("Z");
           });
-          unifiedPathData.push("Z");
         });
+
         if (unifiedPathData.length > 0) {
           finalSvgPaths.push(
-            `<path d="${unifiedPathData.join(" ")}" fill="black" stroke="none" />`,
+            `<path d="${unifiedPathData.join(" ")}" fill="black" stroke="none" />`
           );
         }
       }
@@ -301,11 +328,8 @@ async function convertToSVG_refine(svgString) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  const finalSvgDocument =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">${finalSvgPaths.join("\n")}</svg>`.trim();
-  const blob = new Blob([finalSvgDocument], {
-    type: "image/svg+xml;charset=utf-8",
-  });
+  const finalSvgDocument = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasWidth} ${canvasHeight}" width="${canvasWidth}" height="${canvasHeight}">${finalSvgPaths.join("\n")}</svg>`.trim();
+  const blob = new Blob([finalSvgDocument], { type: "image/svg+xml;charset=utf-8" });
 
   return URL.createObjectURL(blob);
 }
@@ -338,14 +362,13 @@ export function exportVideo(
 
     const originalState = setupExportResolution(targetWidth, targetHeight);
     const originalBackground = scene.background;
-    const originalClearAlpha = renderer.getClearAlpha();
 
     if (bgColor) {
       scene.background = new THREE.Color(bgColor);
-      renderer.setClearAlpha(1);
+      renderer.setClearColor(new THREE.Color(bgColor), 1);
     } else {
       scene.background = null;
-      renderer.setClearAlpha(0);
+      renderer.setClearColor(0x000000, 0);
     }
 
     if (typeof onStartRecord === "function") onStartRecord();
@@ -374,7 +397,7 @@ export function exportVideo(
       const stream = canvas.captureStream(0);
       const track = stream.getVideoTracks()[0];
       const recorder = new MediaRecorder(stream, {
-        mimeType: "video/webm;codecs=vp9",
+        mimeType: "video/webm;codecs=vp8",
         videoBitsPerSecond: 25000000,
       });
 
@@ -392,8 +415,14 @@ export function exportVideo(
       let flushFrames = 0;
 
       const recordNextFrame = async () => {
-        if (composer) composer.render();
-        else renderer.render(scene, originalState.activeCamera);
+        // Replace this block inside BOTH recordNextFrame and captureNextFrame:
+                if (bgColor && composer) {
+                  composer.render();
+                } else {
+                  // CRITICAL: Force clear before rendering transparent video frames
+                  renderer.clear(true, true, true);
+                  renderer.render(scene, originalState.activeCamera);
+                }
 
         if (track && typeof track.requestFrame === "function")
           track.requestFrame();
@@ -445,8 +474,15 @@ export function exportVideo(
       const extension = bgColor ? "jpg" : "png";
 
       const captureNextFrame = async () => {
-        if (composer) composer.render();
-        else renderer.render(scene, originalState.activeCamera);
+        // Bypass composer on transparent export to retain alpha channel
+        // Replace this block inside BOTH recordNextFrame and captureNextFrame:
+        if (bgColor && composer) {
+          composer.render();
+        } else {
+          // CRITICAL: Force clear before rendering transparent video frames
+          renderer.clear(true, true, true);
+          renderer.render(scene, originalState.activeCamera);
+          }
 
         const swalText = document.querySelector(".swal2-html-container");
         if (swalText) swalText.innerText = `Capturing frame ${frameCount}...`;
@@ -504,7 +540,7 @@ export function exportVideo(
               "-c:v",
               "prores_ks",
               "-profile:v",
-              "3",
+              "4",
               "-vendor",
               "ap10",
               "-pix_fmt",
@@ -547,8 +583,6 @@ export function exportVideo(
       rafCallbacks = [];
 
       scene.background = originalBackground;
-      renderer.setClearAlpha(originalClearAlpha);
-
       restoreOriginalResolution(originalState);
     }
   });

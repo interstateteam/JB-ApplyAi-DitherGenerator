@@ -45,10 +45,20 @@ const animSettings = {
     cubeSize: 2500,
   },
   default: {
-    transitionFrames: 120,
-    loopIncrement: 0.01,
-    loopRotationRad: 0.00873,
-  },
+      transitionFrames: 300, // 10s transition when dropping new images/GIFs
+      spinDuration: 600,     // 600 frames (~20 seconds) per 180-degree turn for an ultra-slow sweep
+      pauseDuration: 0,      // 0 frames for continuous motion without dead stops
+    },
+  spinExplode: {
+      pauseNormal: 45,        // 1.5s pause on solid shape at start
+      spinDuration: 180,      // 6s total spin time
+      explodeDelay: 20,       // Triggers much earlier (~0.6s into spin) for massive overlap
+      explodeDuration: 180,   // 6s explode time (finishes at frame 200)
+      pauseExpanded: 60,      // Reduced by 1 second (was 90, now 60 frames / 2s pause)
+      cubeSize: 2500,         // Scatter radius matching breakApart
+      rotations: 1.5,         // Halved from 3 down to 1.5 turns for a much slower, calmer spin
+      transitionFrames: 200,  // Matches total action window (20 + 180 = 200)
+    },
 };
 
 let activeType = null;
@@ -61,6 +71,7 @@ const buttonMapping = {
   breakApart: "breakApartAnimation",
   implode: "implodeAnimation",
   scramble: "scrambleAnimation",
+  spinExplode: "spinExplodeAnimation",
 };
 
 const getMorphState = (data, i, usePrevious) => {
@@ -346,7 +357,6 @@ const handleEasedAnimation = (targetMesh, isTransitioning) => {
       rotationAngle,
     );
 
-    // Prevent visual pops from -1 W quaternion flips at exactly 360 degrees
     if (progress >= 1.0 || progress === 0.0) {
       spinQuat.identity();
     }
@@ -455,8 +465,10 @@ const handleBreakApartAnimation = (targetMesh, isTransitioning) => {
 };
 
 const handleDefaultAnimation = (targetMesh, isTransitioning) => {
-  const { transitionFrames, loopIncrement, loopRotationRad } =
-    animSettings.default;
+  const { transitionFrames, spinDuration } = animSettings.default;
+
+  // Two distinct 180° sweeps ensure a slow-down every half-turn
+  const totalLoop = spinDuration * 2;
 
   if (targetMesh) {
     const data = targetMesh.userData;
@@ -467,8 +479,12 @@ const handleDefaultAnimation = (targetMesh, isTransitioning) => {
     if (isTransitioning) {
       time += 1;
       const progress = Math.min(time / transitionFrames, 1.0);
-      const eased = easeInOutSine(progress);
-      rotationAngle = progress * (transitionFrames * loopRotationRad);
+
+      // Gentler Sine easing prevents the mid-transition velocity whip
+      const blendFactor = 0.90;
+      const eased = easeInOutSine(progress) * blendFactor + progress * (1.0 - blendFactor);
+
+      rotationAngle = eased * (Math.PI * 2);
       const spinQuat = new THREE.Quaternion().setFromAxisAngle(
         new THREE.Vector3(0, 1, 0),
         rotationAngle,
@@ -490,21 +506,24 @@ const handleDefaultAnimation = (targetMesh, isTransitioning) => {
       if (progress >= 1.0)
         window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
     } else {
-      if (window.isExportingLoop) {
-        if (!window.isAnimationLoopComplete) {
-          time += loopIncrement;
-          let progress = time / (Math.PI * 2);
-          if (progress >= 1.0) {
-            progress = 1.0;
-            window.isAnimationLoopComplete = true;
-          }
-          rotationAngle = progress * Math.PI * 2;
-        } else {
-          rotationAngle = Math.PI * 2;
-        }
+      advanceLoopFrame(totalLoop);
+      const currentFrame = time % totalLoop;
+
+      // 90% Sine Easing + 10% Linear gives an "almost stop" at 180° and 360°
+      // while keeping a smooth, consistent cruising speed through the middle!
+      const blendFactor = 0.90;
+
+      if (currentFrame < spinDuration) {
+        // First Half-Turn: 0° -> 180° (0 to PI radians)
+        const t = currentFrame / spinDuration;
+        const smoothT = easeInOutSine(t) * blendFactor + t * (1.0 - blendFactor);
+        rotationAngle = smoothT * Math.PI;
       } else {
-        time += 1;
-        rotationAngle = time * loopRotationRad;
+        // Second Half-Turn: 180° -> 360° (PI to 2*PI radians)
+        const frameInSecondHalf = currentFrame - spinDuration;
+        const t = frameInSecondHalf / spinDuration;
+        const smoothT = easeInOutSine(t) * blendFactor + t * (1.0 - blendFactor);
+        rotationAngle = Math.PI + (smoothT * Math.PI);
       }
 
       const spinQuat = new THREE.Quaternion().setFromAxisAngle(
@@ -519,6 +538,120 @@ const handleDefaultAnimation = (targetMesh, isTransitioning) => {
         return stateB.scale;
       });
     }
+  }
+};
+
+const handleSpinExplodeAnimation = (targetMesh, isTransitioning) => {
+  const {
+    pauseNormal,
+    spinDuration,
+    explodeDelay,
+    explodeDuration,
+    pauseExpanded,
+    cubeSize,
+    rotations,
+    transitionFrames,
+  } = animSettings.spinExplode;
+
+  // Dynamically calculate the end of the action window (20 + 180 = 200 frames)
+  const totalActionFrames = Math.max(spinDuration, explodeDelay + explodeDuration);
+
+  const loopDuration = isTransitioning
+    ? transitionFrames
+    : pauseNormal + totalActionFrames + pauseExpanded + totalActionFrames;
+
+  advanceLoopFrame(loopDuration);
+
+  if (!targetMesh || !targetMesh.userData.originalPositions) return;
+
+  const currentFrame = time % loopDuration;
+  let spinFactor = 0;
+  let explodeFactor = 0;
+  let isSecondHalf = false;
+
+  if (isTransitioning) {
+    const progress = Math.min(time / transitionFrames, 1.0);
+    const spinProgress = Math.min(progress * (transitionFrames / spinDuration), 1.0);
+    spinFactor = easeInOutQuintic(spinProgress);
+
+    const expProgress = Math.max(0, (progress * transitionFrames - explodeDelay) / explodeDuration);
+    explodeFactor = easeInOutQuintic(Math.min(expProgress, 1.0));
+  } else {
+    if (currentFrame < pauseNormal) {
+      // Phase 1: Solid shape pause
+      spinFactor = 0;
+      explodeFactor = 0;
+    } else if (currentFrame < pauseNormal + totalActionFrames) {
+      // Phase 2: Spin starts immediately; explode waits only 20 frames (160 frames of simultaneous overlap)
+      const elapsed = currentFrame - pauseNormal;
+
+      const spinProgress = Math.min(elapsed / spinDuration, 1.0);
+      spinFactor = easeInOutQuintic(spinProgress);
+
+      const expElapsed = elapsed - explodeDelay;
+      const expProgress = expElapsed <= 0 ? 0 : Math.min(expElapsed / explodeDuration, 1.0);
+      explodeFactor = easeInOutQuintic(expProgress);
+    } else if (currentFrame < pauseNormal + totalActionFrames + pauseExpanded) {
+      // Phase 3: Frozen in exploded state (now 1 second shorter)
+      spinFactor = 1.0;
+      explodeFactor = 1.0;
+      isSecondHalf = true;
+    } else {
+      // Phase 4: Mirrored reverse (Exploding grid condenses first, rotation spins back as it reassembles)
+      const elapsed = currentFrame - (pauseNormal + totalActionFrames + pauseExpanded);
+      const remaining = totalActionFrames - elapsed;
+
+      const spinProgress = Math.min(Math.max(0, remaining / spinDuration), 1.0);
+      spinFactor = easeInOutQuintic(spinProgress);
+
+      const expElapsed = remaining - explodeDelay;
+      const expProgress = expElapsed <= 0 ? 0 : Math.min(expElapsed / explodeDuration, 1.0);
+      explodeFactor = easeInOutQuintic(expProgress);
+
+      isSecondHalf = true;
+    }
+  }
+
+  const data = targetMesh.userData;
+  const scatterTarget = new THREE.Vector3();
+
+  const totalAngle = spinFactor * Math.PI * 2 * rotations;
+  const spinQuat = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(0, 1, 0),
+    totalAngle
+  );
+
+  runInstanceMorph(targetMesh, (i, pos, rot) => {
+    const { x, y, z } = pseudoRandomFrac3(i);
+    scatterTarget.set(x * cubeSize, y * cubeSize, z * cubeSize);
+
+    const sourceState = getMorphState(
+      data,
+      i,
+      isTransitioning && !isSecondHalf,
+    );
+
+    pos.lerpVectors(sourceState.pos, scatterTarget, explodeFactor);
+    rot.slerpQuaternions(sourceState.rot, data.gridRotations[i], explodeFactor);
+
+    let currentScale = THREE.MathUtils.lerp(
+      sourceState.scale,
+      data.gridScales[i],
+      explodeFactor
+    );
+    const zNormalized = (pos.z + cubeSize) / (cubeSize * 2);
+    const zMultiplier = 0.2 + zNormalized * 3.8;
+    const finalScaleMultiplier = 1.0 + (zMultiplier - 1.0) * explodeFactor;
+    currentScale *= Math.max(0.01, finalScaleMultiplier);
+
+    pos.applyQuaternion(spinQuat);
+    rot.premultiply(spinQuat);
+
+    return currentScale;
+  });
+
+  if (isTransitioning && currentFrame === loopDuration - 1) {
+    window.dispatchEvent(new CustomEvent("gifTransitionComplete"));
   }
 };
 
@@ -543,6 +676,9 @@ export const updateCameraAnimation = () => {
       break;
     case "breakApart":
       handleBreakApartAnimation(targetMesh, isTransitioning);
+      break;
+    case "spinExplode":
+      handleSpinExplodeAnimation(targetMesh, isTransitioning);
       break;
   }
 };

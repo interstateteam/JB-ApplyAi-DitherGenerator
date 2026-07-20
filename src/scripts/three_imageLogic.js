@@ -107,7 +107,7 @@ export const getPixelData = (
   brightness = (brightness - minBright) / (maxBright - minBright);
   brightness = Math.max(0.0, Math.min(1.0, brightness));
 
-  const SHADOW_DETAIL_CURVE = 0.6;
+  const SHADOW_DETAIL_CURVE = 1;
 
   // Apply the curve to bend the brightness values
   brightness = Math.pow(brightness, SHADOW_DETAIL_CURVE);
