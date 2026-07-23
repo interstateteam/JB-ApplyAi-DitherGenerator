@@ -116,12 +116,8 @@ export const getPixelData = (
 };
 
 export const getGridDimensions = (img, gridSize) => {
-  // A fixed virtual 3D space. This guarantees the exact same amount of dots
-  // for every image, entirely independent of the user's screen resolution.
   const VIRTUAL_SIZE = 1000;
-
-  const cols = Math.floor(VIRTUAL_SIZE / gridSize);
-  const rows = Math.floor(VIRTUAL_SIZE / gridSize);
-
+  const cols = Math.max(1, Math.round(VIRTUAL_SIZE / gridSize));
+  const rows = Math.max(1, Math.round(VIRTUAL_SIZE / gridSize));
   return { cols, rows };
 };

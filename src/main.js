@@ -85,15 +85,17 @@ import {
   triggerDownload,
   changeColourBG,
 } from "./scripts/three_UiLogic.js";
+import { mx_hash_int_3 } from "three/src/nodes/materialx/lib/mx_noise.js";
 
 const scaleSliders = {
-  pixelAmount: { min: 20, max: 3, action: "redraw" },
-  pixelScale: { min: 50, max: 200, action: "redraw" },
-  gridScale: { min: 8, max: 12, action: "redraw" },
+  pixelAmount: { min: 8, max: 1.5, action: "redraw" },
+  pixelScale: { min: 10, max: 80, action: "redraw" },
+  gridScale: { min: 1, max: 10, action: "redraw" },
   pixelDistortion: { min: 0, max: 30, action: "redraw" },
   pixelGravity: { min: 0, max: 100, action: "redraw" },
-  scaleRatio: { min: 100, max: 50, action: "redraw" },
-  whiteCutoff: { min: -10, max: 30, action: "redraw" },
+  scaleRatio: { min: 1, max: 200, action: "redraw" },
+  whiteCutoff: { min: 0, max: 100, action: "redraw" },
+  lightnessCurve: { min: 50, max: 500, action: "redraw" },
 };
 
 let currentImage = null;
@@ -105,10 +107,21 @@ const updateSettingsCache = () => {
   for (const settingName in scaleSliders) {
     const range = scaleSliders[settingName];
     const slider = document.getElementById(settingName);
-    const percentage = parseInt(slider?.value) || 0;
-    cachedSettings[settingName] = Math.floor(
-      range.min + (percentage / 100) * (range.max - range.min),
-    );
+    const percentage = (parseFloat(slider?.value) || 0) / 100;
+
+    if (settingName === "pixelAmount") {
+      // Interpolate in "resolution" (1/gridSize) space so equal slider
+      // steps feel like equal steps in dot density, not equal steps in
+      // gridSize (which is inverse-square in dot count).
+      const minRes = 1 / range.min; // e.g. 1/8
+      const maxRes = 1 / range.max; // e.g. 1/2 (or 1/1 if you extend max)
+      const res = minRes + percentage * (maxRes - minRes);
+      cachedSettings[settingName] = 1 / res; // back to gridSize, now fractional
+    } else {
+      cachedSettings[settingName] = Math.floor(
+        range.min + percentage * (range.max - range.min),
+      );
+    }
   }
   const shapeSelect = document.getElementById("pixelShape");
   cachedSettings.pixelShape = shapeSelect ? shapeSelect.value : "icosahedron";

@@ -28,6 +28,32 @@ const ensureObjectArray = (existing, count, Ctor) => {
 const ensurePlainArray = (existing, count) =>
   existing && existing.length === count ? existing : new Array(count);
 
+// S-curve applied to darkness before it drives density/size, so mid-darks
+// and true-darks separate instead of collapsing into the same band.
+// Only used for structure (density/scatter/size) — never for color.
+const contrastCurve = (t, strength = 0.35) => {
+  const eased = t < 0.5
+    ? 0.5 * Math.pow(2 * t, 1 + strength)
+    : 1 - 0.5 * Math.pow(2 * (1 - t), 1 + strength);
+  return eased;
+};
+
+// Hashed pseudo-random per-cell value — replaces the old sin/cos noise,
+// which was periodic and caused visible grid/moiré banding in smooth
+// gradients (e.g. across the bridge of a nose).
+const hashNoise = (col, row) => {
+  const s = Math.sin(col * 127.1 + row * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+};
+
+// --- HIGHLIGHT, CONTOUR & WHITE SPACE CONTROLS ---
+const sliderMaxCutoff = 200;
+const whiteSpaceScatterBoost = 1.8;
+const globalDotNormalization = 0.62;   // widened to let dark dots overlap into solid ink
+const lightDotMinScale = 0.18;         // light dots shrink further for cleaner highlights
+const airyDotOpticalShrink = 0.85;
+
+// --- CONFIGURATION CONSTANTS ---
 const densityPower = 2.2;
 const wobbleSpreadModifier = 0.15;
 const sizeMidpoint = 1.0;
@@ -37,17 +63,14 @@ const gravityDensityBoost = 0.8;
 const minStippleDensity = 0;
 const highlightCutoff = 0.98;
 
-const pixelDistortion = 40;
-
-const baseVarianceMultiplier = 0.2; // Multiplier for base variance (controls randomness)
-
-const borderBoostMax = 1; // Adjusted to 0.15 for visibility now that the math is normalized
-const borderFalloffCurve = 5; // Smooths the transition from the edge down to the inner dots
-
-const maxGravityInfluence = 0.5; // Controls the slider ceiling (100% slider = this value)
-const jitterSpreadFactor = 2.0; // How many grid rows/cols away a dot can randomly jump
-const darknessExponent = 1; // Higher = chaos isolates to pure blacks. Lower = chaos bleeds into midtones/whites.
-const attractionStrength = 0.5; // How aggressively dots pull toward darker neighbors (magnetic force)
+const pixelDistortion = 20;
+const baseVarianceMultiplier = 0.2;
+const borderBoostMax = 1;
+const borderFalloffCurve = 5;
+const maxGravityInfluence = 0.5;
+const jitterSpreadFactor = 2.0;
+const darknessExponent = 1;
+const attractionStrength = 0.5;
 
 const initLogomarkGeometry = () => {
   const loader = new SVGLoader();
@@ -78,9 +101,11 @@ const cleanup = () => {
   if (instancedMesh) {
     scene.remove(instancedMesh);
     instancedMesh.dispose();
+    instancedMesh = null;
   }
   if (currentGeometry) {
     currentGeometry.dispose();
+    currentGeometry = null;
   }
 };
 
@@ -136,7 +161,6 @@ export const initThreeGrid = (imgWidth, imgHeight, settings) => {
   material.needsUpdate = true;
 
   const { pixelAmount, gridScale, pixelShape } = settings;
-
   const chaosLevel = pixelDistortion / 100;
   const shapeType = pixelShape || "icosahedron";
 
@@ -150,14 +174,11 @@ export const initThreeGrid = (imgWidth, imgHeight, settings) => {
     pixelAmount,
   );
 
-  if (cols * rows <= 0) return null;
+  const count = cols * rows;
+  if (count <= 0) return null;
 
   currentGeometry = createWarpedGeometry(chaosLevel, shapeType);
-  instancedMesh = new THREE.InstancedMesh(
-    currentGeometry,
-    material,
-    cols * rows,
-  );
+  instancedMesh = new THREE.InstancedMesh(currentGeometry, material, Math.ceil(count * 1.6));
 
   setCameraZoom(6 / gridScale);
   scene.add(instancedMesh);
@@ -175,43 +196,30 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
     pixelGravity = 0,
     scaleRatio,
     alignmentScale,
-    whiteCutoff = 8
+    whiteCutoff = 20,
+    lightnessCurve = 100,
   } = settings;
+
   const chaosLevel = (pixelDistortion || 0) / 100;
   const spacing = pixelAmount * (gridScale / 5);
   const { minBright, maxBright } = imgData ? getBrightnessRange(imgData) : {};
+  const effectiveCurve = lightnessCurve / 100;
 
   const count = cols * rows;
+  const maxInstances = Math.ceil(count * 1.6);
+
   const existing = mesh.userData || {};
 
-  const originalPositions = ensureObjectArray(
-    existing.originalPositions,
-    count,
-    THREE.Vector3,
-  );
-  const gridPositions = ensureObjectArray(
-    existing.gridPositions,
-    count,
-    THREE.Vector3,
-  );
-  const originalRotations = ensureObjectArray(
-    existing.originalRotations,
-    count,
-    THREE.Quaternion,
-  );
-  const gridRotations = ensureObjectArray(
-    existing.gridRotations,
-    count,
-    THREE.Quaternion,
-  );
-  const originalScales = ensurePlainArray(existing.originalScales, count);
-  const gridScales = ensurePlainArray(existing.gridScales, count);
+  const originalPositions = ensureObjectArray(existing.originalPositions, maxInstances, THREE.Vector3);
+  const gridPositions = ensureObjectArray(existing.gridPositions, maxInstances, THREE.Vector3);
+  const originalRotations = ensureObjectArray(existing.originalRotations, maxInstances, THREE.Quaternion);
+  const gridRotations = ensureObjectArray(existing.gridRotations, maxInstances, THREE.Quaternion);
+  const originalScales = ensurePlainArray(existing.originalScales, maxInstances);
+  const gridScales = ensurePlainArray(existing.gridScales, maxInstances);
   const activeInstances =
-    existing.activeInstances && existing.activeInstances.length === count
+    existing.activeInstances && existing.activeInstances.length === maxInstances
       ? existing.activeInstances
-      : new Uint8Array(count);
-
-  let instanceIndex = 0;
+      : new Uint8Array(maxInstances);
 
   const brightnessCache = new Float32Array(count);
   const alphaCache = new Float32Array(count);
@@ -219,15 +227,7 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
   if (imgData) {
     for (let c = 0; c < cols; c++) {
       for (let r = 0; r < rows; r++) {
-        const pData = getPixelData(
-          imgData,
-          c,
-          r,
-          cols,
-          rows,
-          minBright,
-          maxBright,
-        );
+        const pData = getPixelData(imgData, c, r, cols, rows, minBright, maxBright);
         const cacheIndex = r * cols + c;
         brightnessCache[cacheIndex] = pData.brightness;
         alphaCache[cacheIndex] = pData.alpha;
@@ -235,275 +235,305 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
     }
   }
 
-  for (let col = 0; col < cols; col++) {
-      for (let row = 0; row < rows; row++) {
-        const cacheIndex = row * cols + col;
-        const brightness = imgData ? brightnessCache[cacheIndex] : 0;
-        const alpha = imgData ? alphaCache[cacheIndex] : 0;
+  const bgCutoffThreshold = 0.985;
 
-        const darkness = 1.0 - brightness;
-
-        let shiftX = 0,
-          shiftY = 0,
-          edgeProximity = 0;
-        const smallnessInfluence =
-          brightness < 0.1 ? 0 : (brightness - 0.1) / 0.9;
-
-        ({ shiftX, shiftY, edgeProximity } = calculateGravityShift(
-          col,
-          row,
-          cols,
-          rows,
-          imgData,
-          minBright,
-          maxBright,
-          alpha,
-          smallnessInfluence,
-          pixelGravity,
-          spacing,
-          alignmentScale,
-        ));
-
-        const gravityNorm = Math.max(0, Math.min(100, pixelGravity)) / 100;
-        const gravityInfluence = gravityNorm * maxGravityInfluence;
-        const varianceWeight = typeof scaleRatio === "number" ? scaleRatio / 50 : 1.0;
-
-        // 1. SCAN NEIGHBORS: Track darkest pull & detect actual subject boundaries
-        let darkPullX = 0;
-        let darkPullY = 0;
-        let maxNeighborDarkness = darkness;
-        let isBoundary = false;
-
-        const neighborOffsets = [
-          { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
-          { x: 1, y: 1 }, { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 },
-        ];
-
-        neighborOffsets.forEach((offset) => {
-          const nCol = col + offset.x;
-          const nRow = row + offset.y;
-
-          if (nCol >= 0 && nCol < cols && nRow >= 0 && nRow < rows) {
-            const nIndex = nRow * cols + nCol;
-            const neighborAlpha = imgData ? alphaCache[nIndex] : 0;
-            const neighborBrightness = imgData ? brightnessCache[nIndex] : 1;
-
-            const isNeighborEmpty = neighborAlpha <= 0.05 || neighborBrightness > (typeof highlightCutoff !== "undefined" ? highlightCutoff : 0.98);
-
-            if (isNeighborEmpty) {
-              isBoundary = true;
-            }
-
-            const neighborDarkness = 1.0 - neighborBrightness;
-
-            if (neighborDarkness > maxNeighborDarkness) {
-              maxNeighborDarkness = neighborDarkness;
-            }
-
-            if (neighborDarkness > darkness) {
-              const pullStrength =
-                (neighborDarkness - darkness) *
-                spacing *
-                (attractionStrength + varianceWeight * 0.5) *
-                gravityInfluence;
-              darkPullX += offset.x * pullStrength;
-              darkPullY += offset.y * pullStrength;
-            }
-          }
-        });
-
-        // MULTI-LINE GRADIENT EDGE:
-        const isThisPixelEmpty = alpha <= 0.05 || brightness > (typeof highlightCutoff !== "undefined" ? highlightCutoff : 0.98);
-
-        const effectiveEdge = isBoundary ? Math.max(edgeProximity, 0.95) : edgeProximity;
-        const edgeGradient = THREE.MathUtils.smoothstep(effectiveEdge, 0.15, 1.0);
-
-        const inEdgeBand = edgeGradient > 0.0 && !isThisPixelEmpty;
-        const isBackground = isThisPixelEmpty && !inEdgeBand;
-
-        // 2. DENSITY & SPARE DOT LOGIC
-        const lowerCutoff = (whiteCutoff || 0) / 100;
-        const whiteRatio = THREE.MathUtils.clamp((whiteCutoff || 0) / 30, 0.1, 1.0);
-
-        const curvedDarkness = Math.pow(darkness, 2.5);
-        const curvedNeighbor = Math.pow(maxNeighborDarkness, 2.5);
-        const effectiveDarkness = Math.max(curvedDarkness, curvedNeighbor * 0.5 * gravityNorm);
-
-        const upperCutoff = Math.max(lowerCutoff + 0.15, 0.35);
-        let stippleDensity = THREE.MathUtils.smoothstep(effectiveDarkness, lowerCutoff, upperCutoff);
-
-        if (inEdgeBand) {
-          const edgeDensityTarget = THREE.MathUtils.lerp(0.35, 0.70, whiteRatio);
-          const blendedEdgeDensity = edgeDensityTarget * edgeGradient;
-          stippleDensity = Math.max(stippleDensity, blendedEdgeDensity);
-        }
-
-        // LIGHT PATCH DENSITY SUPPRESSION:
-        // Aggressively thins out dots in lighter wood grain bands (darkness < 0.45)
-        // by up to 70%, keeping mid-to-light areas sparse and clean like the drawing!
-        if (darkness < 0.45 && !inEdgeBand) {
-          stippleDensity *= Math.pow(Math.max(0, darkness) / 0.45, 1.5);
-        }
-
-        // DENSE SHADOW OVERRIDE (Shifted up to protect lighter tones):
-        // Guaranteed 100% survival for deep shadows (> 0.65), and an 80% floor for mid-shadows (> 0.45).
-        if (darkness > 0.65) {
-          stippleDensity = 1.0;
-        } else if (darkness > 0.45) {
-          stippleDensity = Math.max(stippleDensity, 0.80);
-        }
-
-        // 4x4 Bayer Dither Matrix
-        const ditherMatrix = [
-          [0.06, 0.56, 0.19, 0.69],
-          [0.81, 0.31, 0.94, 0.44],
-          [0.25, 0.75, 0.12, 0.62],
-          [1.00, 0.50, 0.88, 0.38],
-        ];
-
-        const ditherThreshold = ditherMatrix[row % 4][col % 4];
-
-        // AGGRESSIVE DITHER SCRAMBLE:
-        const organicScramble = THREE.MathUtils.randFloatSpread(0.45) * Math.pow(1.0 - darkness, 1.2);
-        const hideDot = (ditherThreshold + organicScramble) > stippleDensity;
-
-        activeInstances[instanceIndex] = isBackground || hideDot ? 0 : 1;
-
-        // 3. SIZE & SCALE CALCULATIONS
-        const originalVariance = 0.5 + Math.pow(darkness, 2) * baseVarianceMultiplier;
-        const innerSize = sizeMidpoint + (originalVariance - sizeMidpoint) * varianceWeight;
-
-        const patchFrequency = 0.3;
-        const spatialNoise =
-          (Math.sin(col * patchFrequency) +
-            Math.cos(row * patchFrequency) +
-            Math.sin((col + row) * (patchFrequency * 0.5))) / 3;
-
-        const normalizedNoise = (spatialNoise + 1) / 2;
-        const stableSize = sizeMidpoint + Math.pow(darkness, 2) * varianceWeight;
-        const sizeWeight = Math.max(0, 2 - stableSize);
-
-        const normalizedFalloff = borderFalloffCurve * Math.max(0.5, stableSize);
-        const edgeIntensity = Math.pow(edgeProximity, normalizedFalloff);
-        const organicEdgeBlend = 0.3 + normalizedNoise * 0.7;
-
-        const borderMultiplier =
-          1.0 + borderBoostMax * sizeWeight * edgeIntensity * organicEdgeBlend;
-
-        let finalDotSize = innerSize * borderMultiplier;
-
-        // SHADOW INK EXPANSION:
-        if (darkness > 0.35) {
-          finalDotSize *= 1.0 + Math.pow(darkness, 2) * 0.40;
-        }
-
-        // MID-TONE SIZE RANDOMNESS:
-        // Uses a sine wave (Math.sin(darkness * Math.PI)) that peaks at 1.0 right in the middle tones (0.5),
-        // and drops to 0 in pure highlights and deep shadows. Applies up to +/-35% organic size variety!
-        const midToneWeight = Math.sin(THREE.MathUtils.clamp(darkness, 0.0, 1.0) * Math.PI);
-        finalDotSize *= 1.0 + THREE.MathUtils.randFloatSpread(0.70) * midToneWeight;
-
-        // GRADIENT OUTLINE SIZE SCALING:
-        if (inEdgeBand) {
-          const targetEdgeScale = THREE.MathUtils.lerp(0.30, 0.65, whiteRatio);
-          const edgeSizeFactor = THREE.MathUtils.lerp(1.0, targetEdgeScale, edgeGradient);
-          finalDotSize *= edgeSizeFactor;
-        }
-
-        // Universal 0.28 size floor applied after all randomizations so dots never vanish into dust
-        finalDotSize = Math.max(finalDotSize, 0.28);
-
-        const maxEdgeSize = 1.2;
-        const dynamicCap = maxEdgeSize + (1.0 - edgeProximity) * 10.0;
-        finalDotSize = Math.min(finalDotSize, dynamicCap);
-
-        const baseScale = (isBackground || hideDot)
-          ? 0
-          : (pixelScale / 100) * (gridScale / 5) * finalDotSize;
-
-        const dotPixelDistortion = 15 + Math.pow(normalizedNoise, 2) * (pixelDistortion - 15);
-        const dotChaosLevel = dotPixelDistortion / 100;
-        const dampenedChaos = dotChaosLevel * (1.0 - gravityNorm * gravityWobbleDampener);
-
-        const wobble = 1.0 + spatialNoise * wobbleSpreadModifier * dampenedChaos;
-        const finalOriginalScale = baseScale * wobble;
-
-        // 4. RANDOM JITTER & EDGE ANCHORING
-        const anchorWeight = 1.0 - Math.pow(edgeGradient, 0.7);
-
-        const whiteSpaceBoost = 1.0 + Math.pow(1.0 - darkness, 2) * 0.75;
-        const maxJitterDistance = spacing * jitterSpreadFactor * whiteSpaceBoost;
-
-        const brightScatterFloor = Math.pow(1.0 - darkness, 1.5) * 0.85;
-        const shadowTightScatter = Math.pow(darkness, darknessExponent) * 0.35;
-        const scatterIntensity = Math.max(brightScatterFloor, shadowTightScatter);
-
-        const effectiveJitter = THREE.MathUtils.lerp(
-          Math.max(gravityInfluence, 0.80),
-          Math.max(gravityInfluence, 0.30),
-          Math.min(1.0, darkness * 1.5)
-        );
-
-        const darkJitterX =
-          THREE.MathUtils.randFloatSpread(maxJitterDistance) *
-          scatterIntensity *
-          effectiveJitter;
-        const darkJitterY =
-          THREE.MathUtils.randFloatSpread(maxJitterDistance) *
-          scatterIntensity *
-          effectiveJitter;
-
-        // Apply anchorWeight to ALL spatial movement (gravity shifts, neighbor pulls, and jitter)
-        const totalShiftX = (shiftX + darkPullX + darkJitterX) * anchorWeight;
-        const totalShiftY = (shiftY + darkPullY + darkJitterY) * anchorWeight;
-
-        // 5. FINAL POSITION ASSEMBLY
-        const objPos = originalPositions[instanceIndex];
-        objPos.set(
-          (col - (cols - 1) / 2) * spacing + totalShiftX,
-          (row - (rows - 1) / 2) * spacing + totalShiftY,
-          (brightness - 0.5) * 1200,
-        );
-
-        const isLogomark = settings.pixelShape === "logomark";
-        if (isLogomark) {
-          eulerScratch.set(0, 0, 0);
-        } else {
-          eulerScratch.set(
-            Math.random() * Math.PI * 2,
-            Math.random() * Math.PI * 2,
-            Math.random() * Math.PI * 2,
-          );
-        }
-
-        const spreadX = 1.6,
-          spreadY = 1,
-          spreadZ = 15;
-        const depthStep = ((col + row) % 8) - 4;
-        const gPos = gridPositions[instanceIndex];
-        gPos.set(
-          (col - (cols - 1) / 2) * spacing * spreadX,
-          (row - (rows - 1) / 2) * spacing * spreadY,
-          depthStep * spacing * spreadZ,
-        );
-
-        const finalGridScale = (pixelScale / 100) * (gridScale / 5) * 0.6;
-
-        originalRotations[instanceIndex].setFromEuler(eulerScratch);
-        gridRotations[instanceIndex].identity();
-        originalScales[instanceIndex] = finalOriginalScale;
-        gridScales[instanceIndex] = finalGridScale;
-
-        dummyObject.position.copy(objPos);
-        dummyObject.rotation.copy(eulerScratch);
-        dummyObject.scale.setScalar(finalOriginalScale);
-
-        colorHelper.setScalar(brightness);
-        mesh.setColorAt(instanceIndex, colorHelper);
-        dummyObject.updateMatrix();
-        mesh.setMatrixAt(instanceIndex, dummyObject.matrix);
-        instanceIndex++;
+  let subjectMin = 1.0;
+  let subjectMax = 0.0;
+  if (imgData) {
+    for (let i = 0; i < count; i++) {
+      const b = brightnessCache[i];
+      const a = alphaCache[i];
+      const isBg = a <= 0.05 || b >= bgCutoffThreshold;
+      if (!isBg) {
+        if (b < subjectMin) subjectMin = b;
+        if (b > subjectMax) subjectMax = b;
       }
+    }
+  }
+  if (subjectMax <= subjectMin + 0.05) {
+    subjectMin = 0.0;
+    subjectMax = 1.0;
+  }
+
+  const gravityNorm = Math.max(0, Math.min(100, pixelGravity)) / 100;
+  const gravityInfluence = gravityNorm * maxGravityInfluence;
+  const varianceWeight = typeof scaleRatio === "number" ? scaleRatio / 50 : 0.0;
+
+  const normalizedCutoff = THREE.MathUtils.clamp(whiteCutoff / sliderMaxCutoff, 0.0, 1.0);
+  const highlightPower = 1.0 + (normalizedCutoff * 6.0);
+
+  const normBrightness = new Float32Array(count);
+  const isBg = new Uint8Array(count);
+
+  for (let col = 0; col < cols; col++) {
+    for (let row = 0; row < rows; row++) {
+      const idx = row * cols + col;
+      const rawBrightness = imgData ? brightnessCache[idx] : 0;
+      const alpha = imgData ? alphaCache[idx] : 0;
+      const bg = alpha <= 0.05 || rawBrightness >= bgCutoffThreshold;
+      isBg[idx] = bg ? 1 : 0;
+
+      if (bg) {
+        normBrightness[idx] = 1.0;
+        continue;
+      }
+      let b = THREE.MathUtils.clamp((rawBrightness - subjectMin) / (subjectMax - subjectMin), 0.0, 1.0);
+      if (Math.abs(effectiveCurve - 1.0) > 0.03) b = Math.pow(b, effectiveCurve);
+      normBrightness[idx] = b;
+    }
+  }
+
+  const neighborOffsets = [
+    { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
+    { x: 1, y: 1 }, { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 },
+  ];
+
+  const internalEdgeThreshold = 0.1;
+  const subjectCells = [];
+
+  for (let col = 0; col < cols; col++) {
+    for (let row = 0; row < rows; row++) {
+      const cacheIndex = row * cols + col;
+      if (isBg[cacheIndex]) continue;
+
+      const brightness = normBrightness[cacheIndex];
+      const darkness = 1.0 - brightness;
+
+      let shiftX = 0, shiftY = 0, edgeProximity = 0;
+      const smallnessInfluence = brightness < 0.1 ? 0 : (brightness - 0.1) / 0.9;
+
+      ({ shiftX, shiftY, edgeProximity } = calculateGravityShift(
+        col, row, cols, rows, imgData, minBright, maxBright,
+        alphaCache[cacheIndex], smallnessInfluence, pixelGravity, spacing, alignmentScale,
+      ));
+
+      let darkPullX = 0;
+      let darkPullY = 0;
+      let isBoundary = false;
+      let maxLocalContrast = 0;
+
+      for (let n = 0; n < neighborOffsets.length; n++) {
+        const offset = neighborOffsets[n];
+        const nCol = col + offset.x;
+        const nRow = row + offset.y;
+
+        if (nCol >= 0 && nCol < cols && nRow >= 0 && nRow < rows) {
+          const nIndex = nRow * cols + nCol;
+          const neighborIsBg = isBg[nIndex] === 1;
+          if (neighborIsBg) isBoundary = true;
+
+          const neighborBrightness = normBrightness[nIndex];
+          const neighborDarkness = 1.0 - neighborBrightness;
+
+          if (!neighborIsBg) {
+            const contrast = Math.abs(brightness - neighborBrightness);
+            if (contrast > maxLocalContrast) maxLocalContrast = contrast;
+          }
+
+          if (neighborDarkness > darkness) {
+            const pullStrength =
+              (neighborDarkness - darkness) * spacing *
+              (attractionStrength + varianceWeight * 0.5) * gravityInfluence;
+            darkPullX += offset.x * pullStrength;
+            darkPullY += offset.y * pullStrength;
+          }
+        } else {
+          isBoundary = true;
+        }
+      }
+
+      const isInternalEdge = maxLocalContrast > internalEdgeThreshold;
+      const effectiveEdge = isBoundary ? Math.max(edgeProximity, 0.95) : edgeProximity;
+
+      subjectCells.push({
+        col, row, brightness, darkness, shiftX, shiftY,
+        darkPullX, darkPullY, effectiveEdge, isBoundary, isInternalEdge,
+      });
+    }
+  }
+
+  let estimatedTotalDots = 0;
+  const cellTonalDarkness = new Array(subjectCells.length);
+  const cellDensities = new Array(subjectCells.length);
+
+  for (let i = 0; i < subjectCells.length; i++) {
+    const cell = subjectCells[i];
+    const tonalDarkness = contrastCurve(cell.darkness, 0.65);
+    const densityCurve =
+      Math.pow(tonalDarkness, densityPower) *
+      Math.pow(tonalDarkness, (highlightPower - 1) * 0.35) *
+      (0.85 + 0.9 * Math.pow(tonalDarkness, 3));
+    const densityTarget = densityCurve * 2.6;
+
+    cellTonalDarkness[i] = tonalDarkness;
+    cellDensities[i] = densityTarget;
+    estimatedTotalDots += densityTarget;
+  }
+
+  const budgetScale = estimatedTotalDots > maxInstances
+    ? (maxInstances / estimatedTotalDots) * 0.92
+    : 1.0;
+
+  let instanceIndex = 0;
+
+  for (let i = 0; i < subjectCells.length && instanceIndex < maxInstances; i++) {
+    const cell = subjectCells[i];
+
+    const tonalDarkness = cellTonalDarkness[i];
+    const densityTarget = cellDensities[i] * budgetScale;
+
+    let numDots = Math.floor(densityTarget);
+
+    if (Math.random() < densityTarget - numDots) numDots += 1;
+
+    const isCrispEdgeCell = cell.isBoundary || cell.effectiveEdge > 0.6 || cell.isInternalEdge;
+
+    const edgeGuaranteeProbability = THREE.MathUtils.smoothstep(cell.darkness, 0.0, 0.25);
+    if (isCrispEdgeCell && numDots === 0 && Math.random() < edgeGuaranteeProbability) {
+      numDots = 1;
+    }
+
+    for (let d = 0; d < numDots && instanceIndex < maxInstances; d++) {
+      let stippleJitterX = 0;
+      let stippleJitterY = 0;
+
+      const baseScatter = isCrispEdgeCell
+        ? spacing * (cell.isInternalEdge && !cell.isBoundary
+            ? 0.08
+            : THREE.MathUtils.lerp(0.12, 0.45, Math.pow(tonalDarkness, 1.3)))
+        : spacing * THREE.MathUtils.lerp(1.15, 1.65, Math.pow(tonalDarkness, 1.3));
+
+      const randomAngle = Math.random() * Math.PI * 2;
+      const randomDist = Math.sqrt(Math.random()) * baseScatter;
+      stippleJitterX = Math.cos(randomAngle) * randomDist;
+      stippleJitterY = Math.sin(randomAngle) * randomDist;
+
+      const pullWeight = THREE.MathUtils.smoothstep(cell.darkness, 0.05, 0.80);
+      const totalShiftX = cell.shiftX + (cell.darkPullX * pullWeight) + stippleJitterX;
+      const totalShiftY = cell.shiftY + (cell.darkPullY * pullWeight) + stippleJitterY;
+
+      const effectiveDiff = THREE.MathUtils.clamp(varianceWeight * 0.5, 0.0, 1.0);
+      const lightDotSize = THREE.MathUtils.lerp(1.0, lightDotMinScale, effectiveDiff);
+      const perceptualDarkness = Math.pow(tonalDarkness, 0.90);
+      const innerSize = THREE.MathUtils.lerp(lightDotSize, 1.0, perceptualDarkness);
+
+      const normalizedNoise = hashNoise(cell.col, cell.row);
+      const spatialNoise = normalizedNoise * 2 - 1;
+
+      const outlineEase = THREE.MathUtils.smoothstep(cell.effectiveEdge, 0.10, 1.0);
+      const outlineBoost = 0.10 * Math.pow(outlineEase, 2.2) * THREE.MathUtils.smoothstep(cell.darkness, 0.0, 0.3);
+      const internalEdgeBoost = cell.isInternalEdge ? 0.04 : 0;
+
+      let finalDotSize = innerSize + Math.max(outlineBoost, internalEdgeBoost);
+
+      const midToneWeight = Math.sin(THREE.MathUtils.clamp(cell.darkness, 0.0, 1.0) * Math.PI);
+      finalDotSize += THREE.MathUtils.randFloatSpread(0.05) * midToneWeight;
+
+      const opticalShrink = THREE.MathUtils.lerp(
+        airyDotOpticalShrink, 1.0,
+        THREE.MathUtils.smoothstep(cell.darkness, 0.0, 0.2)
+      );
+      finalDotSize *= opticalShrink;
+      finalDotSize = THREE.MathUtils.clamp(finalDotSize, 0.10, 1.6);
+
+      const baseScale = (pixelScale / 100) * (gridScale / 5) * finalDotSize * globalDotNormalization;
+
+      const dotPixelDistortion = 15 + Math.pow(normalizedNoise, 2) * (pixelDistortion - 15);
+      const dotChaosLevel = dotPixelDistortion / 100;
+      const dampenedChaos = dotChaosLevel * (1.0 - gravityNorm * gravityWobbleDampener);
+      const wobble = 1.0 + spatialNoise * wobbleSpreadModifier * dampenedChaos;
+      const finalOriginalScale = baseScale * wobble;
+
+      const objPos = originalPositions[instanceIndex];
+
+      // --- LIGHT / DARK ZONE CUSTOMIZATION KNOBS ---
+      const midpoint = 0.02;     // Lower = forces almost ALL dots into the light zone
+      const lightPower = 0.75;   // < 1.0 aggressively propels faint mid-tones deep into light space
+      const darkPower = 0.85;    // Exponent for dark depth falloff
+
+      const maxForward = 135;    // Total forward reach into positive Z space
+      const maxBackward = 45;    // Total backward reach into negative Z space
+
+      // --- Z-DEPTH CALCULATION ---
+      const toneDiff = cell.brightness - midpoint;
+      let baseZ = 0;
+
+      if (toneDiff >= 0) {
+        const normLight = toneDiff / (1.0 - midpoint);
+        baseZ = Math.pow(normLight, lightPower) * maxForward;
+      } else {
+        const normDark = Math.abs(toneDiff) / midpoint;
+        baseZ = -Math.pow(normDark, darkPower) * maxBackward;
+      }
+
+      const jitterMin = toneDiff < 0 ? 0.2 : 0.75;
+      const depthJitter = jitterMin + Math.random() * (1.2 - jitterMin);
+      baseZ *= depthJitter;
+
+      const organicScatter = THREE.MathUtils.randFloatSpread(6);
+      const finalZ = baseZ + organicScatter;
+
+      objPos.set(
+        (cell.col - (cols - 1) / 2) * spacing + totalShiftX,
+        (cell.row - (rows - 1) / 2) * spacing + totalShiftY,
+        finalZ,
+      );
+
+      const isLogomark = settings.pixelShape === "logomark";
+      if (isLogomark) {
+        eulerScratch.set(0, 0, 0);
+      } else {
+        eulerScratch.set(
+          Math.random() * Math.PI * 2,
+          Math.random() * Math.PI * 2,
+          Math.random() * Math.PI * 2,
+        );
+      }
+
+      const spreadX = 1.6, spreadY = 1, spreadZ = 20;
+      const depthStep = ((cell.col + cell.row) % 8) - 4;
+      const gPos = gridPositions[instanceIndex];
+      gPos.set(
+        (cell.col - (cols - 1) / 2) * spacing * spreadX,
+        (cell.row - (rows - 1) / 2) * spacing * spreadY,
+        depthStep * spacing * spreadZ,
+      );
+
+      const finalGridScale = (pixelScale / 100) * (gridScale / 5) * 0.6;
+
+      originalRotations[instanceIndex].setFromEuler(eulerScratch);
+      gridRotations[instanceIndex].identity();
+      originalScales[instanceIndex] = finalOriginalScale;
+      gridScales[instanceIndex] = finalGridScale;
+
+      dummyObject.position.copy(objPos);
+      dummyObject.rotation.copy(eulerScratch);
+      dummyObject.scale.setScalar(finalOriginalScale);
+
+      const dotGrey = THREE.MathUtils.lerp(0.08, 0.92, cell.brightness);
+      colorHelper.setScalar(dotGrey);
+      mesh.setColorAt(instanceIndex, colorHelper);
+
+      dummyObject.updateMatrix();
+      mesh.setMatrixAt(instanceIndex, dummyObject.matrix);
+
+      activeInstances[instanceIndex] = 1;
+      instanceIndex++;
+    }
+  }
+
+  dummyObject.position.set(0, 0, 0);
+  dummyObject.rotation.set(0, 0, 0);
+  dummyObject.scale.setScalar(0);
+  dummyObject.updateMatrix();
+  const zeroMatrix = dummyObject.matrix.clone();
+
+  while (instanceIndex < maxInstances) {
+    activeInstances[instanceIndex] = 0;
+    originalScales[instanceIndex] = 0;
+    gridScales[instanceIndex] = 0;
+    mesh.setMatrixAt(instanceIndex, zeroMatrix);
+    instanceIndex++;
   }
 
   mesh.userData = mesh.userData || {};

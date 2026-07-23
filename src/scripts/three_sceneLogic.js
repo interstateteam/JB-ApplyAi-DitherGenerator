@@ -165,3 +165,28 @@ export const initThree = (canvasId, initialGridScale) => {
     renderer.setSize(width, height);
   });
 };
+
+const raycaster = new THREE.Raycaster();
+export const mouseRay = raycaster.ray;
+mouseRay.origin.set(99999, 99999, 99999); // Start off-screen
+
+// window.addEventListener("mousemove", (event) => {
+//   if (!camera || !renderer) return;
+
+//   // INDUSTRY STANDARD FIX: Calculate coordinates relative to the actual canvas DOM element
+//   // This instantly fixes any left/right offset caused by sidebars, padding, or CSS layouts!
+//   const rect = renderer.domElement.getBoundingClientRect();
+//   const x = event.clientX - rect.left;
+//   const y = event.clientY - rect.top;
+
+//   const mouseNDC = new THREE.Vector2(
+//     (x / rect.width) * 2 - 1,
+//     -(y / rect.height) * 2 + 1
+//   );
+
+//   raycaster.setFromCamera(mouseNDC, camera);
+// });
+
+// window.addEventListener("mouseleave", () => {
+//   mouseRay.origin.set(99999, 99999, 99999);
+// });

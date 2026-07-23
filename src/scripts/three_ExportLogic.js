@@ -125,30 +125,42 @@ function restoreOriginalResolution(originalState) {
 /**
  * Renders the active scene into a base64 encoded JPG format.
  */
-export function exportToJPG() {
-  if (!scene || !renderer || !camera) return null;
+ export function exportToJPG() {
+   if (!scene || !renderer || !camera) return null;
 
-  const originalState = setupExportResolution(targetWidth, targetHeight);
-  const canvasContainer = renderer.domElement.parentElement;
-  const currentBgColor = canvasContainer
-    ? window.getComputedStyle(canvasContainer).backgroundColor
-    : "#f43b00";
-  const originalBackground = scene.background;
+   const originalState = setupExportResolution(targetWidth, targetHeight);
+   const canvasContainer = renderer.domElement.parentElement;
 
-  scene.background = new THREE.Color(currentBgColor);
+   // 1. Get container color, but intercept transparent values
+   let currentBgColor = canvasContainer
+     ? window.getComputedStyle(canvasContainer).backgroundColor
+     : "#f43b00";
 
-  if (composer) {
-    composer.render();
-  } else {
-    renderer.render(scene, originalState.activeCamera);
-  }
+   // If the container is transparent, fallback to white (or your default theme color)
+   // otherwise THREE.Color parses rgba(0,0,0,0) as solid black.
+   if (currentBgColor === "rgba(0, 0, 0, 0)" || currentBgColor === "transparent") {
+     currentBgColor = "#ffffff"; // Or "#f43b00" based on your needs
+   }
 
-  const dataURL = renderer.domElement.toDataURL("image/jpeg", 1.0);
-  scene.background = originalBackground;
-  restoreOriginalResolution(originalState);
+   const originalBackground = scene.background;
+   scene.background = new THREE.Color(currentBgColor);
 
-  return dataURL;
-}
+   // 2. CRITICAL: Explicitly clear buffers before rendering to prevent artifacting
+   renderer.clear(true, true, true);
+
+   if (composer) {
+     composer.render();
+   } else {
+     renderer.render(scene, originalState.activeCamera);
+   }
+
+   const dataURL = renderer.domElement.toDataURL("image/jpeg", 1.0);
+
+   scene.background = originalBackground;
+   restoreOriginalResolution(originalState);
+
+   return dataURL;
+ }
 
 /**
  * Renders the active scene into a transparent base64 encoded PNG format.
@@ -348,242 +360,268 @@ export async function convertToSVG() {
 /**
  * Compiles rendered frames into a seamless video loop using native WebM or FFmpeg fallbacks.
  */
-export function exportVideo(
-  durationInSeconds = 5,
-  format = "mp4",
-  bgColor = null,
-  onStartRecord,
-) {
-  return new Promise(async (resolve, reject) => {
-    if (!renderer || !scene || !camera) {
-      reject("Dependencies missing");
-      return;
-    }
+ /**
+  * Compiles rendered frames into a seamless video loop using native WebM or FFmpeg fallbacks.
+  */
+ export function exportVideo(
+   durationInSeconds = 5,
+   format = "mp4",
+   bgColor = null,
+   onStartRecord,
+ ) {
+   return new Promise(async (resolve, reject) => {
+     if (!renderer || !scene || !camera) {
+       reject("Dependencies missing");
+       return;
+     }
 
-    const originalState = setupExportResolution(targetWidth, targetHeight);
-    const originalBackground = scene.background;
+     const originalState = setupExportResolution(targetWidth, targetHeight);
+     const originalBackground = scene.background;
 
-    if (bgColor) {
-      scene.background = new THREE.Color(bgColor);
-      renderer.setClearColor(new THREE.Color(bgColor), 1);
-    } else {
-      scene.background = null;
-      renderer.setClearColor(0x000000, 0);
-    }
+     if (bgColor) {
+       scene.background = new THREE.Color(bgColor);
+       renderer.setClearColor(new THREE.Color(bgColor), 1);
+     } else {
+       scene.background = null;
+       renderer.setClearColor(0x000000, 0);
+     }
 
-    if (typeof onStartRecord === "function") onStartRecord();
+     if (typeof onStartRecord === "function") onStartRecord();
 
-    const canvas = renderer.domElement;
-    let frameCount = 0;
+     // CRITICAL: Initialize global export flags so the animation loop controller knows to run
+     window.isExportingLoop = true;
+     window.isAnimationLoopComplete = false;
 
-    const originalPerfNow = window.performance.now.bind(window.performance);
-    const originalDateNow = window.Date.now.bind(window.Date);
-    const originalRAF = window.requestAnimationFrame.bind(window);
-    const originalCancelRAF = window.cancelAnimationFrame.bind(window);
+     const canvas = renderer.domElement;
+     let frameCount = 0;
 
-    let simulatedTime = originalPerfNow();
-    window.performance.now = () => simulatedTime;
-    window.Date.now = () => Math.floor(simulatedTime);
+     const originalPerfNow = window.performance.now.bind(window.performance);
+     const originalDateNow = window.Date.now.bind(window.Date);
+     const originalRAF = window.requestAnimationFrame.bind(window);
+     const originalCancelRAF = window.cancelAnimationFrame.bind(window);
 
-    let rafCallbacks = [];
-    window.requestAnimationFrame = (callback) => {
-      rafCallbacks.push(callback);
-      return Math.random();
-    };
-    window.cancelAnimationFrame = () => {};
+     let simulatedTime = originalPerfNow();
+     window.performance.now = () => simulatedTime;
+     window.Date.now = () => Math.floor(simulatedTime);
 
-    if (format === "webm") {
-      const chunks = [];
-      const stream = canvas.captureStream(0);
-      const track = stream.getVideoTracks()[0];
-      const recorder = new MediaRecorder(stream, {
-        mimeType: "video/webm;codecs=vp8",
-        videoBitsPerSecond: 25000000,
-      });
+     let rafCallbacks = [];
+     window.requestAnimationFrame = (callback) => {
+       rafCallbacks.push(callback);
+       return Math.random();
+     };
+     window.cancelAnimationFrame = () => {};
 
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunks.push(e.data);
-      };
+     if (format === "webm") {
+       const chunks = [];
+       const stream = canvas.captureStream(0);
+       const track = stream.getVideoTracks()[0];
 
-      recorder.onstop = () => {
-        cleanupWorld();
-        resolve(new Blob(chunks, { type: "video/webm" }));
-      };
+       // 1. Dynamic codec selection: VP9 supports alpha transparency; VP8 does not.
+       const supportedTypes = [
+         "video/webm;codecs=vp9",
+         "video/webm;codecs=vp8",
+         "video/webm",
+       ];
+       const selectedMimeType = supportedTypes.find((type) =>
+         MediaRecorder.isTypeSupported(type)
+       ) || "video/webm";
 
-      recorder.start();
-      let isFlushing = false;
-      let flushFrames = 0;
+       let recorder;
+       try {
+         recorder = new MediaRecorder(stream, {
+           mimeType: selectedMimeType,
+           videoBitsPerSecond: 25000000,
+         });
+       } catch (err) {
+         cleanupWorld();
+         reject(`WebM recording not supported: ${err.message}`);
+         return;
+       }
 
-      const recordNextFrame = async () => {
-        // Replace this block inside BOTH recordNextFrame and captureNextFrame:
-                if (bgColor && composer) {
-                  composer.render();
-                } else {
-                  // CRITICAL: Force clear before rendering transparent video frames
-                  renderer.clear(true, true, true);
-                  renderer.render(scene, originalState.activeCamera);
-                }
+       recorder.ondataavailable = (e) => {
+         if (e.data && e.data.size > 0) chunks.push(e.data);
+       };
 
-        if (track && typeof track.requestFrame === "function")
-          track.requestFrame();
+       recorder.onstop = () => {
+         cleanupWorld();
+         resolve(new Blob(chunks, { type: selectedMimeType }));
+       };
 
-        const swalText = document.querySelector(".swal2-html-container");
-        if (swalText) swalText.innerText = `Recording frame ${frameCount}...`;
+       recorder.start();
+       let isFlushing = false;
+       let flushFrames = 0;
 
-        frameCount++;
+       const recordNextFrame = async () => {
+         if (bgColor && composer) {
+           composer.render();
+         } else {
+           renderer.clear(true, true, true);
+           renderer.render(scene, originalState.activeCamera);
+         }
 
-        if (!isFlushing) {
-          let isSequenceFinished = false;
-          if (window.isAnimationLoopComplete) {
-            if (window.exportTotalDuration) {
-              const gifFrames = Math.round(window.exportTotalDuration * 30);
-              if (frameCount > 0 && frameCount % gifFrames === 0)
-                isSequenceFinished = true;
-            } else {
-              isSequenceFinished = true;
-            }
-          }
-          if (isSequenceFinished) isFlushing = true;
-        }
+         // 2. Await buffer presentation so WebGL doesn't capture blank/duplicate frames
+         await new Promise((r) => originalRAF(r));
 
-        if (isFlushing) {
-          if (flushFrames >= 2) {
-            recorder.stop();
-            return;
-          }
-          flushFrames++;
-        }
+         if (track && typeof track.requestFrame === "function") {
+           track.requestFrame();
+         }
 
-        simulatedTime += 1000 / 30;
-        const callbacksToRun = [...rafCallbacks];
-        rafCallbacks = [];
-        callbacksToRun.forEach((cb) => cb(simulatedTime));
+         const swalText = document.querySelector(".swal2-html-container");
+         if (swalText) swalText.innerText = `Recording frame ${frameCount}...`;
 
-        setTimeout(recordNextFrame, 10);
-      };
+         frameCount++;
 
-      setTimeout(recordNextFrame, 100);
-    } else {
-      const { FFmpeg } = await import("@ffmpeg/ffmpeg");
-      const { fetchFile } = await import("@ffmpeg/util");
+         if (!isFlushing) {
+           let isSequenceFinished = false;
+           if (window.isAnimationLoopComplete) {
+             if (window.exportTotalDuration) {
+               const gifFrames = Math.round(window.exportTotalDuration * 30);
+               if (frameCount > 0 && frameCount % gifFrames === 0)
+                 isSequenceFinished = true;
+             } else {
+               isSequenceFinished = true;
+             }
+           }
+           if (isSequenceFinished) isFlushing = true;
+         }
 
-      const ffmpeg = new FFmpeg();
-      await ffmpeg.load();
+         if (isFlushing) {
+           if (flushFrames >= 2) {
+             recorder.stop();
+             return;
+           }
+           flushFrames++;
+         }
 
-      const captureMimeType = bgColor ? "image/jpeg" : "image/png";
-      const extension = bgColor ? "jpg" : "png";
+         simulatedTime += 1000 / 30;
+         const callbacksToRun = [...rafCallbacks];
+         rafCallbacks = [];
+         callbacksToRun.forEach((cb) => cb(simulatedTime));
 
-      const captureNextFrame = async () => {
-        // Bypass composer on transparent export to retain alpha channel
-        // Replace this block inside BOTH recordNextFrame and captureNextFrame:
-        if (bgColor && composer) {
-          composer.render();
-        } else {
-          // CRITICAL: Force clear before rendering transparent video frames
-          renderer.clear(true, true, true);
-          renderer.render(scene, originalState.activeCamera);
-          }
+         // 3. Pace frame recording to real-time (~33.3ms for 30fps) to prevent hyperspeed playback
+         setTimeout(recordNextFrame, 1000 / 30);
+       };
 
-        const swalText = document.querySelector(".swal2-html-container");
-        if (swalText) swalText.innerText = `Capturing frame ${frameCount}...`;
+       setTimeout(recordNextFrame, 1000 / 30);
+     } else {
+       const { FFmpeg } = await import("@ffmpeg/ffmpeg");
+       const { fetchFile } = await import("@ffmpeg/util");
 
-        const frameBlob = await new Promise((res) => {
-          canvas.toBlob(
-            res,
-            captureMimeType,
-            captureMimeType === "image/jpeg" ? 0.85 : undefined,
-          );
-        });
+       const ffmpeg = new FFmpeg();
+       await ffmpeg.load();
 
-        const frameName = `frame_${String(frameCount).padStart(4, "0")}.${extension}`;
-        await ffmpeg.writeFile(frameName, await fetchFile(frameBlob));
-        frameCount++;
+       const captureMimeType = bgColor ? "image/jpeg" : "image/png";
+       const extension = bgColor ? "jpg" : "png";
 
-        if (window.isAnimationLoopComplete) {
-          if (swalText) swalText.innerText = `Compiling video...`;
-          compileVideoAndResolve();
-        } else {
-          simulatedTime += 1000 / 30;
-          const callbacksToRun = [...rafCallbacks];
-          rafCallbacks = [];
-          callbacksToRun.forEach((cb) => cb(simulatedTime));
-          setTimeout(captureNextFrame, 0);
-        }
-      };
+       const captureNextFrame = async () => {
+         if (bgColor && composer) {
+           composer.render();
+         } else {
+           renderer.clear(true, true, true);
+           renderer.render(scene, originalState.activeCamera);
+         }
 
-      const compileVideoAndResolve = async () => {
-        try {
-          let outFilename = `output.${format}`;
-          let ffmpegArgs = [
-            "-framerate",
-            "30",
-            "-i",
-            `frame_%04d.${extension}`,
-          ];
+         const swalText = document.querySelector(".swal2-html-container");
+         if (swalText) swalText.innerText = `Capturing frame ${frameCount}...`;
 
-          if (format === "mp4") {
-            ffmpegArgs.push(
-              "-c:v",
-              "libx264",
-              "-preset",
-              "ultrafast",
-              "-tune",
-              "animation",
-              "-pix_fmt",
-              "yuv420p",
-              "-crf",
-              "18",
-              outFilename,
-            );
-          } else if (format === "mov") {
-            ffmpegArgs.push(
-              "-c:v",
-              "prores_ks",
-              "-profile:v",
-              "4",
-              "-vendor",
-              "ap10",
-              "-pix_fmt",
-              "yuva444p10le",
-              outFilename,
-            );
-          }
+         const frameBlob = await new Promise((res) => {
+           canvas.toBlob(
+             res,
+             captureMimeType,
+             captureMimeType === "image/jpeg" ? 0.85 : undefined,
+           );
+         });
 
-          await ffmpeg.exec(ffmpegArgs);
-          const finalVideoData = await ffmpeg.readFile(outFilename);
-          const videoTypeMap = { mp4: "video/mp4", mov: "video/quicktime" };
+         const frameName = `frame_${String(frameCount).padStart(4, "0")}.${extension}`;
+         await ffmpeg.writeFile(frameName, await fetchFile(frameBlob));
+         frameCount++;
 
-          cleanupWorld();
-          try {
-            ffmpeg.terminate();
-          } catch (e) {}
+         if (window.isAnimationLoopComplete) {
+           if (swalText) swalText.innerText = `Compiling video...`;
+           compileVideoAndResolve();
+         } else {
+           simulatedTime += 1000 / 30;
+           const callbacksToRun = [...rafCallbacks];
+           rafCallbacks = [];
+           callbacksToRun.forEach((cb) => cb(simulatedTime));
+           setTimeout(captureNextFrame, 0);
+         }
+       };
 
-          resolve(
-            new Blob([finalVideoData.buffer], { type: videoTypeMap[format] }),
-          );
-        } catch (err) {
-          cleanupWorld();
-          try {
-            ffmpeg.terminate();
-          } catch (e) {}
-          reject(err);
-        }
-      };
+       const compileVideoAndResolve = async () => {
+         try {
+           let outFilename = `output.${format}`;
+           let ffmpegArgs = [
+             "-framerate",
+             "30",
+             "-i",
+             `frame_%04d.${extension}`,
+           ];
 
-      setTimeout(captureNextFrame, 100);
-    }
+           if (format === "mp4") {
+             ffmpegArgs.push(
+               "-c:v",
+               "libx264",
+               "-preset",
+               "ultrafast",
+               "-tune",
+               "animation",
+               "-pix_fmt",
+               "yuv420p",
+               "-crf",
+               "18",
+               outFilename,
+             );
+           } else if (format === "mov") {
+             ffmpegArgs.push(
+               "-c:v",
+               "prores_ks",
+               "-profile:v",
+               "4",
+               "-vendor",
+               "ap10",
+               "-pix_fmt",
+               "yuva444p10le",
+               outFilename,
+             );
+           }
 
-    function cleanupWorld() {
-      window.performance.now = originalPerfNow;
-      window.Date.now = originalDateNow;
-      window.requestAnimationFrame = originalRAF;
-      window.cancelAnimationFrame = originalCancelRAF;
+           await ffmpeg.exec(ffmpegArgs);
+           const finalVideoData = await ffmpeg.readFile(outFilename);
+           const videoTypeMap = { mp4: "video/mp4", mov: "video/quicktime" };
 
-      rafCallbacks.forEach((cb) => originalRAF(cb));
-      rafCallbacks = [];
+           cleanupWorld();
+           try {
+             ffmpeg.terminate();
+           } catch (e) {}
 
-      scene.background = originalBackground;
-      restoreOriginalResolution(originalState);
-    }
-  });
-}
+           resolve(
+             new Blob([finalVideoData.buffer], { type: videoTypeMap[format] }),
+           );
+         } catch (err) {
+           cleanupWorld();
+           try {
+             ffmpeg.terminate();
+           } catch (e) {}
+           reject(err);
+         }
+       };
+
+       setTimeout(captureNextFrame, 100);
+     }
+
+     function cleanupWorld() {
+       window.isExportingLoop = false;
+       window.performance.now = originalPerfNow;
+       window.Date.now = originalDateNow;
+       window.requestAnimationFrame = originalRAF;
+       window.cancelAnimationFrame = originalCancelRAF;
+
+       rafCallbacks.forEach((cb) => originalRAF(cb));
+       rafCallbacks = [];
+
+       scene.background = originalBackground;
+       restoreOriginalResolution(originalState);
+     }
+   });
+ }
