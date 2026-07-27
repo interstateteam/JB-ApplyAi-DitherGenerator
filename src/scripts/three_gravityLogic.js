@@ -21,14 +21,13 @@ export const calculateGravityShift = (
   row,
   cols,
   rows,
-  imgData,
-  minBright,
-  maxBright,
+  brightnessCache,
+  alphaCache,
   alpha,
   smallnessInfluence,
   pixelGravity,
   spacing,
-  alignmentScale,
+  alignmentFactor,
 ) => {
   let shiftX = 0;
   let shiftY = 0;
@@ -36,31 +35,24 @@ export const calculateGravityShift = (
 
   if (alpha <= 0.01) return { shiftX, shiftY, edgeProximity: 1.0 };
 
-  const self = getPixelData(
-    imgData,
-    col,
-    row,
-    cols,
-    rows,
-    minBright,
-    maxBright,
-  );
+  const selfBrightness = brightnessCache[row * cols + col];
 
+  // Reads from the brightness/alpha caches that three_gridLogic.js already
+  // built once per redraw, instead of re-deriving each neighbor's value
+  // from raw image bytes via getPixelData (this runs up to ~12x per cell,
+  // for every subject cell, every redraw). Same clamped-edge behaviour as
+  // before: an out-of-bounds neighbor reads the clamped edge pixel, it is
+  // not treated as void.
   const getSafe = (c, r) => {
-    const pixel = getPixelData(
-      imgData,
-      Math.max(0, Math.min(cols - 1, c)),
-      Math.max(0, Math.min(rows - 1, r)),
-      cols,
-      rows,
-      minBright,
-      maxBright,
-    );
+    const cc = Math.max(0, Math.min(cols - 1, c));
+    const rr = Math.max(0, Math.min(rows - 1, r));
+    const idx = rr * cols + cc;
+    const nAlpha = alphaCache[idx];
 
-    if (pixel.alpha <= 0.01) {
-      return { brightness: self.brightness, alpha: 0 };
+    if (nAlpha <= 0.01) {
+      return { brightness: selfBrightness, alpha: 0 };
     }
-    return pixel;
+    return { brightness: brightnessCache[idx], alpha: nAlpha };
   };
 
   let distanceToVoid = edgeLaneDepth + 1;
@@ -114,10 +106,6 @@ export const calculateGravityShift = (
     const val = -grad * pixelGravity * spacing * gravityCalcMultiplier;
     return Math.max(-maxShift, Math.min(maxShift, val));
   };
-
-  const alignmentFactor = document.getElementById("alignmentScale")
-    ? alignmentScale / 100
-    : 1.0;
 
   const rawGradX = neighbors.right.brightness - neighbors.left.brightness;
   const rawGradY = neighbors.down.brightness - neighbors.up.brightness;

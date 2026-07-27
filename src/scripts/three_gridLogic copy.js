@@ -23,146 +23,6 @@ let currentShapeType = null;
 let currentMaxInstances = 0;
 let brightnessRangeCache = null; // { imgData, minBright, maxBright }
 
-// --- FULL-RESULT CACHE ---
-// Every distinct (image, resolution, and slider) combination gets computed
-// once and cached in full — instance matrices, colors, and the position/
-// rotation/scale data the animation system reads from mesh.userData.
-// Dragging back to a value you've already visited (including pixelAmount,
-// which used to force a full resample + reclassify + full dot-placement
-// pass every time) becomes a straight buffer copy instead of a recompute.
-// This also happens to freeze the random realization the first time a
-// given combination is computed, so revisits are pixel-identical rather
-// than being re-rolled — a nice side effect, not something we had to
-// engineer separately.
-const MAX_CACHE_ENTRIES = 10;
-const resultCache = new Map();
-
-let imgDataIdCounter = 0;
-const imgDataIds = new WeakMap();
-const getImgDataId = (imgData) => {
-  if (!imgData) return "none";
-  let id = imgDataIds.get(imgData);
-  if (id === undefined) {
-    id = imgDataIdCounter++;
-    imgDataIds.set(imgData, id);
-  }
-  return id;
-};
-
-const buildCacheKey = (imgData, cols, rows, settings) =>
-  [
-    getImgDataId(imgData),
-    `${cols}x${rows}`,
-    settings.pixelScale,
-    settings.gridScale,
-    settings.pixelGravity,
-    settings.scaleRatio,
-    settings.alignmentScale,
-    settings.whiteCutoff,
-    settings.lightnessCurve,
-    settings.pixelShape,
-  ].join("|");
-
-const flattenVec3Array = (arr, count) => {
-  const out = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    const v = arr[i];
-    out[i * 3] = v.x;
-    out[i * 3 + 1] = v.y;
-    out[i * 3 + 2] = v.z;
-  }
-  return out;
-};
-
-const unflattenVec3Array = (flat, arr, count) => {
-  for (let i = 0; i < count; i++) {
-    arr[i].set(flat[i * 3], flat[i * 3 + 1], flat[i * 3 + 2]);
-  }
-};
-
-const flattenQuatArray = (arr, count) => {
-  const out = new Float32Array(count * 4);
-  for (let i = 0; i < count; i++) {
-    const q = arr[i];
-    out[i * 4] = q.x;
-    out[i * 4 + 1] = q.y;
-    out[i * 4 + 2] = q.z;
-    out[i * 4 + 3] = q.w;
-  }
-  return out;
-};
-
-const unflattenQuatArray = (flat, arr, count) => {
-  for (let i = 0; i < count; i++) {
-    arr[i].set(flat[i * 4], flat[i * 4 + 1], flat[i * 4 + 2], flat[i * 4 + 3]);
-  }
-};
-
-const restoreFromCache = (mesh, cached) => {
-  const { maxInstances } = cached;
-  const existing = mesh.userData || {};
-
-  const originalPositions = ensureObjectArray(existing.originalPositions, maxInstances, THREE.Vector3);
-  const gridPositions = ensureObjectArray(existing.gridPositions, maxInstances, THREE.Vector3);
-  const originalRotations = ensureObjectArray(existing.originalRotations, maxInstances, THREE.Quaternion);
-  const gridRotations = ensureObjectArray(existing.gridRotations, maxInstances, THREE.Quaternion);
-  const originalScales = ensurePlainArray(existing.originalScales, maxInstances);
-  const gridScales = ensurePlainArray(existing.gridScales, maxInstances);
-  const activeInstances =
-    existing.activeInstances && existing.activeInstances.length === maxInstances
-      ? existing.activeInstances
-      : new Uint8Array(maxInstances);
-
-  unflattenVec3Array(cached.originalPositions, originalPositions, maxInstances);
-  unflattenVec3Array(cached.gridPositions, gridPositions, maxInstances);
-  unflattenQuatArray(cached.originalRotations, originalRotations, maxInstances);
-  unflattenQuatArray(cached.gridRotations, gridRotations, maxInstances);
-  for (let i = 0; i < maxInstances; i++) {
-    originalScales[i] = cached.originalScales[i];
-    gridScales[i] = cached.gridScales[i];
-  }
-  activeInstances.set(cached.activeInstances);
-
-  mesh.userData = mesh.userData || {};
-  mesh.userData.originalPositions = originalPositions;
-  mesh.userData.gridPositions = gridPositions;
-  mesh.userData.originalRotations = originalRotations;
-  mesh.userData.gridRotations = gridRotations;
-  mesh.userData.originalScales = originalScales;
-  mesh.userData.gridScales = gridScales;
-  mesh.userData.activeInstances = activeInstances;
-
-  mesh.instanceMatrix.array.set(cached.matrixArray);
-  mesh.instanceMatrix.needsUpdate = true;
-
-  if (!mesh.instanceColor) {
-    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(maxInstances * 3), 3);
-  }
-  mesh.instanceColor.array.set(cached.colorArray);
-  mesh.instanceColor.needsUpdate = true;
-};
-
-const storeInCache = (cacheKey, mesh, maxInstances, originalPositions, gridPositions, originalRotations, gridRotations, originalScales, gridScales, activeInstances) => {
-  const snapshot = {
-    maxInstances,
-    originalPositions: flattenVec3Array(originalPositions, maxInstances),
-    gridPositions: flattenVec3Array(gridPositions, maxInstances),
-    originalRotations: flattenQuatArray(originalRotations, maxInstances),
-    gridRotations: flattenQuatArray(gridRotations, maxInstances),
-    originalScales: Float32Array.from(originalScales),
-    gridScales: Float32Array.from(gridScales),
-    activeInstances: activeInstances.slice(),
-    matrixArray: mesh.instanceMatrix.array.slice(),
-    colorArray: mesh.instanceColor.array.slice(),
-  };
-
-  resultCache.set(cacheKey, snapshot);
-  if (resultCache.size > MAX_CACHE_ENTRIES) {
-    const oldestKey = resultCache.keys().next().value;
-    resultCache.delete(oldestKey);
-  }
-};
-
 const ensureObjectArray = (existing, count, Ctor) => {
   if (existing && existing.length === count) return existing;
   const arr = new Array(count);
@@ -392,16 +252,6 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
   const count = cols * rows;
   const maxInstances = Math.ceil(count * 1.6);
 
-  const cacheKey = buildCacheKey(imgData, cols, rows, settings);
-  const cached = resultCache.get(cacheKey);
-  if (cached && cached.maxInstances === maxInstances) {
-    restoreFromCache(mesh, cached);
-    // Refresh LRU position on hit.
-    resultCache.delete(cacheKey);
-    resultCache.set(cacheKey, cached);
-    return;
-  }
-
   const existing = mesh.userData || {};
 
   const originalPositions = ensureObjectArray(existing.originalPositions, maxInstances, THREE.Vector3);
@@ -576,33 +426,13 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
   const cellTonalDarkness = new Float32Array(subjectCellCount);
   const cellDensities = new Float32Array(subjectCellCount);
 
-  // Interior density falloff: cells that are neither a boundary nor an
-  // internal-contrast edge (i.e. deep, flat interior fill — think the
-  // middle of a solid dark shadow) get scaled down toward
-  // interiorDensityFloor as effectiveEdge drops toward 0. A human eye
-  // can't tell 5 overlapping dots from 3 in a flat solid-dark region —
-  // detail perception is concentrated at silhouettes and internal
-  // contrast, which is exactly what boundary/internal-edge cells and a
-  // high effectiveEdge already flag, so those are left at full density.
-  // This directly cuts total dot count (and therefore the cost of the
-  // per-dot placement loop below) without touching edge/outline fidelity.
-  const interiorDensityFloor = 0.5;
-  const interiorFalloffRange = 0.4;
-
   for (let i = 0; i < subjectCellCount; i++) {
     const tonalDarkness = contrastCurve(scDarkness[i], 0.65);
     const densityCurve =
       Math.pow(tonalDarkness, densityPower) *
       Math.pow(tonalDarkness, (highlightPower - 1) * 0.35) *
       (0.85 + 0.9 * Math.pow(tonalDarkness, 3));
-
-    const isEdgeProtected = scIsBoundary[i] === 1 || scIsInternalEdge[i] === 1;
-    const edgeFalloff = THREE.MathUtils.smoothstep(scEffectiveEdge[i], 0.0, interiorFalloffRange);
-    const interiorMultiplier = isEdgeProtected
-      ? 1.0
-      : THREE.MathUtils.lerp(interiorDensityFloor, 1.0, edgeFalloff);
-
-    const densityTarget = densityCurve * 2.6 * interiorMultiplier;
+    const densityTarget = densityCurve * 2.6;
 
     cellTonalDarkness[i] = tonalDarkness;
     cellDensities[i] = densityTarget;
@@ -802,12 +632,6 @@ export const applyImageToGrid = (imgData, cols, rows, settings, mesh) => {
 
   mesh.instanceMatrix.needsUpdate = true;
   mesh.instanceColor.needsUpdate = true;
-
-  storeInCache(
-    cacheKey, mesh, maxInstances,
-    originalPositions, gridPositions, originalRotations, gridRotations,
-    originalScales, gridScales, activeInstances,
-  );
 };
 
 let sampledImgCache = null; // { img, cols, rows, imgData }

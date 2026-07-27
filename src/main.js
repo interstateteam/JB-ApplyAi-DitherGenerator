@@ -581,17 +581,29 @@ window.addEventListener("load", () => {
   window.addEventListener("resize", checkScrollStatus);
   setTimeout(checkScrollStatus, 200);
 
-  Object.keys(scaleSliders).forEach((id) => {
-    document.getElementById(id)?.addEventListener("input", () => {
+  // Coalesce rapid-fire slider "input" events into at most one redraw per
+  // animation frame. During a drag, "input" can fire far faster than we can
+  // afford to rebuild the grid; without this, every tick was triggering a
+  // full mesh teardown/rebuild, which is what made dragging feel broken.
+  // We always read the slider's live value inside the rAF callback (not at
+  // schedule time), so whichever events fired in between, we act on the
+  // freshest value once the frame is actually ready for it.
+  let redrawScheduled = false;
+  const scheduleRedraw = () => {
+    if (redrawScheduled) return;
+    redrawScheduled = true;
+    requestAnimationFrame(() => {
+      redrawScheduled = false;
       updateSettingsCache();
       redraw();
     });
+  };
+
+  Object.keys(scaleSliders).forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", scheduleRedraw);
   });
 
-  document.getElementById("pixelShape")?.addEventListener("change", () => {
-    updateSettingsCache();
-    redraw();
-  });
+  document.getElementById("pixelShape")?.addEventListener("change", scheduleRedraw);
 
   const defaultImageEl = document.getElementById("defaultImage");
   if (defaultImageEl?.src) loadImage(defaultImageEl.src);
